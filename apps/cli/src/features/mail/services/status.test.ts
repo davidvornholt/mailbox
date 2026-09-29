@@ -2,28 +2,29 @@ import { describe, expect, it } from 'bun:test';
 import {
   ImapError,
   KeyringError,
-  MissingPasswordError,
+  MissingCredentialsError,
+  OAuthError,
 } from '../errors/errors';
 import { statusFromError } from './status';
 
 describe('statusFromError', () => {
-  it('reports a missing keyring password as no-password with a login hint', () => {
+  it('reports missing keyring credentials as no-credentials with a login hint', () => {
     const status = statusFromError(
       'a@b.com',
-      new MissingPasswordError({ account: 'a@b.com', message: 'none' }),
+      new MissingCredentialsError({ account: 'a@b.com', message: 'none' }),
     );
-    expect(status.state).toBe('no-password');
+    expect(status.state).toBe('no-credentials');
     expect(status.ok).toBe(false);
     expect(status.message).toContain('mailbox login --account a@b.com');
   });
 
-  it('reports a connection/auth failure as unauthenticated with the cause', () => {
-    const status = statusFromError(
-      'a@b.com',
-      new ImapError({ message: 'Invalid credentials' }),
-    );
+  it.each([
+    ['a connection or login failure', new ImapError({ message: 'Rejected' })],
+    ['a rejected Microsoft sign-in', new OAuthError({ message: 'Rejected' })],
+  ])('reports %s as unauthenticated with the cause', (_case, error) => {
+    const status = statusFromError('a@b.com', error);
     expect(status.state).toBe('unauthenticated');
-    expect(status.message).toBe('Invalid credentials');
+    expect(status.message).toBe('Rejected');
   });
 
   it('reports other failures as a generic error', () => {

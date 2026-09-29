@@ -1,5 +1,5 @@
 # Copy to ~/.config/mailbox/accounts.toml, then run: mailbox login
-# Passwords live in the OS keyring, not in this file.
+# Passwords and Microsoft sign-ins live in the OS keyring, not in this file.
 
 [[accounts]]
 email = "you@example.com"  # the address you pass to --account
@@ -8,3 +8,11 @@ host = "imap.example.com"  # IMAP server
 # port = 993               # default 993
 # secure = true            # implicit TLS; default true
 # user = "you@example.com" # IMAP login; defaults to email
+# auth = "password"        # "password" or "microsoft"; default "password"
+
+# Outlook.com and Microsoft 365 accounts sign in with Microsoft instead.
+# [[accounts]]
+# email = "you@outlook.com"
+# name = "Your Name"
+# host = "outlook.office365.com"
+# auth = "microsoft"

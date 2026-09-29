@@ -139,8 +139,8 @@ export const defaultSearchLimit = 20;
 
 export type AccountStatusState =
   | 'authenticated'
-  | 'password-stored'
-  | 'no-password'
+  | 'credentials-stored'
+  | 'no-credentials'
   | 'unauthenticated'
   | 'error';
 

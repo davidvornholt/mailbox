@@ -12,6 +12,7 @@ const account: Account = {
   port: 993,
   secure: true,
   user: 'sender@example.com',
+  auth: 'password',
 };
 
 const folders = [

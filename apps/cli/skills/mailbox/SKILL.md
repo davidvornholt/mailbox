@@ -14,4 +14,4 @@ Run `mailbox --help` for commands and `mailbox <command> --help` for options. Ou
 - Keep the `account`, `folder`, `uid`, and `uidValidity` values that commands print; later commands need them. `draft update` prints a new uid.
 - Delete a draft only when the user asked for it.
 - A search lists accounts it could not search under `failures`.
-- If an account has no working password, ask the user to run `mailbox login`.
+- If an account has no working login, ask the user to run `mailbox login`.

@@ -1,8 +1,14 @@
 import { Console, Effect } from 'effect';
 import type { MailError } from '../features/mail/errors/errors';
-import { keyringService } from '../features/mail/schemas/account';
+import { type Account, keyringService } from '../features/mail/schemas/account';
 import { Imap } from '../features/mail/services/imap';
-import { storeVerifiedPassword } from '../features/mail/services/login';
+import {
+  microsoftLogin,
+  type NewLogin,
+  passwordLogin,
+  storeVerifiedLogin,
+} from '../features/mail/services/login';
+import { MicrosoftAuth } from '../features/mail/services/microsoft-auth';
 import { Secrets } from '../features/mail/services/secrets';
 import { type HiddenPromptResult, promptHidden } from '../shared/terminal';
 
@@ -14,32 +20,84 @@ type LoginAttempt =
 
 type LoginResult = LoginAttempt & { readonly email: string };
 
+// A login to verify and store, or the attempt's result when there is none.
+type Obtained =
+  | { readonly _tag: 'obtained'; readonly login: NewLogin }
+  | Extract<LoginAttempt, { readonly _tag: 'skipped' | 'cancelled' }>;
+
 type HiddenPrompt = (question: string) => Effect.Effect<HiddenPromptResult>;
 
-const loginAccount = (
+const cancelled = {
+  _tag: 'cancelled',
+  message: 'cancelled — remaining accounts skipped.',
+} as const;
+
+const promptPassword = (
   email: string,
   prompt: HiddenPrompt,
-): Effect.Effect<LoginAttempt, MailError, Imap | Secrets> =>
+): Effect.Effect<Obtained> =>
+  prompt(`Password for ${email} (input hidden): `).pipe(
+    Effect.map((result): Obtained => {
+      if (result._tag === 'cancelled') {
+        return cancelled;
+      }
+      if (result.value === '') {
+        return { _tag: 'skipped', message: 'empty password — skipped.' };
+      }
+      return { _tag: 'obtained', login: passwordLogin(result.value) };
+    }),
+  );
+
+// The user signs in on Microsoft's page while the terminal waits. As at the
+// password prompt, Enter skips the account and Ctrl-C cancels the rest.
+const signInWithMicrosoft = (
+  email: string,
+  prompt: HiddenPrompt,
+): Effect.Effect<Obtained, MailError, MicrosoftAuth> =>
   Effect.gen(function* () {
-    const promptResult = yield* prompt(
-      `Password for ${email} (input hidden): `,
+    const microsoft = yield* MicrosoftAuth;
+    const device = yield* microsoft.requestDeviceCode;
+    return yield* Effect.raceFirst(
+      microsoft.awaitSignIn(device).pipe(
+        Effect.map(
+          (tokens): Obtained => ({
+            _tag: 'obtained',
+            login: microsoftLogin(tokens),
+          }),
+        ),
+      ),
+      prompt(
+        `Sign in to Microsoft as ${email}: open ${device.verificationUri} and enter the code ${device.userCode}\nWaiting for sign-in (press Enter to skip): `,
+      ).pipe(
+        Effect.map(
+          (result): Obtained =>
+            result._tag === 'cancelled'
+              ? cancelled
+              : { _tag: 'skipped', message: 'sign-in skipped.' },
+        ),
+      ),
     );
-    if (promptResult._tag === 'cancelled') {
-      return {
-        _tag: 'cancelled',
-        message: 'cancelled — remaining accounts skipped.',
-      } as const;
-    }
-    if (promptResult.value === '') {
-      return { _tag: 'skipped', message: 'empty password — skipped.' } as const;
+  });
+
+const loginAccount = (
+  account: Account,
+  prompt: HiddenPrompt,
+): Effect.Effect<LoginAttempt, MailError, Imap | Secrets | MicrosoftAuth> =>
+  Effect.gen(function* () {
+    const obtained =
+      account.auth === 'password'
+        ? yield* promptPassword(account.email, prompt)
+        : yield* signInWithMicrosoft(account.email, prompt);
+    if (obtained._tag !== 'obtained') {
+      return obtained;
     }
     const secrets = yield* Secrets;
     const imap = yield* Imap;
-    yield* storeVerifiedPassword(
-      email,
-      promptResult.value,
-      imap.verifyCredentials,
-      secrets.setPassword,
+    yield* storeVerifiedLogin(
+      account.email,
+      obtained.login,
+      imap.verifyLogin,
+      secrets.setCredential,
     );
     return {
       _tag: 'success',
@@ -47,30 +105,34 @@ const loginAccount = (
     } as const;
   });
 
-// Prompts for each account in turn and reports every result. Resolves to true
+// Logs in to each account in turn and reports every result. Resolves to true
 // only when every account was stored.
 export const loginAccounts = (
-  emails: ReadonlyArray<string>,
+  accounts: ReadonlyArray<Account>,
   prompt: HiddenPrompt = promptHidden,
-): Effect.Effect<boolean, never, Imap | Secrets> =>
+): Effect.Effect<boolean, never, Imap | Secrets | MicrosoftAuth> =>
   Effect.gen(function* () {
     const results = yield* Effect.reduceWhile(
-      emails,
+      accounts,
       [] as ReadonlyArray<LoginResult>,
       {
         while: (previous) => previous.at(-1)?._tag !== 'cancelled',
-        body: (previous, email) =>
-          loginAccount(email, prompt).pipe(
+        body: (previous, account) =>
+          loginAccount(account, prompt).pipe(
             Effect.map(
               (result): ReadonlyArray<LoginResult> => [
                 ...previous,
-                { email, ...result },
+                { email: account.email, ...result },
               ],
             ),
             Effect.catchAll((error) =>
               Effect.succeed([
                 ...previous,
-                { email, _tag: 'failed', message: error.message } as const,
+                {
+                  email: account.email,
+                  _tag: 'failed',
+                  message: error.message,
+                } as const,
               ]),
             ),
           ),
