@@ -18,10 +18,23 @@ const rejection = (input: unknown): string =>
   });
 
 describe('decodeAccounts', () => {
-  it('applies implicit TLS defaults and uses the email as the login user', () => {
+  it('applies implicit TLS and password defaults and uses the email as the login user', () => {
     expect(decoded({ accounts: [minimalAccount] })).toEqual([
-      { ...minimalAccount, port: 993, secure: true, user: 'a@b.com' },
+      {
+        ...minimalAccount,
+        port: 993,
+        secure: true,
+        user: 'a@b.com',
+        auth: 'password',
+      },
     ]);
+  });
+
+  it('keeps Microsoft sign-in as the auth method', () => {
+    const [account] = decoded({
+      accounts: [{ ...minimalAccount, auth: 'microsoft' }],
+    });
+    expect(account?.auth).toBe('microsoft');
   });
 
   it('keeps an explicit port, security mode, and login user', () => {
@@ -47,6 +60,7 @@ describe('decodeAccounts', () => {
     ['a missing host', { email: 'a@b.com', name: 'A' }, 'host'],
     ['a misspelled key', { ...minimalAccount, hots: 'x' }, 'hots'],
     ['an out-of-range port', { ...minimalAccount, port: 70_000 }, 'port'],
+    ['an unknown auth method', { ...minimalAccount, auth: 'oauth' }, 'auth'],
   ])('rejects %s and names the field', (_case, account, field) => {
     expect(rejection({ accounts: [account] })).toContain(field);
   });

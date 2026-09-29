@@ -1,13 +1,15 @@
 import { Entry } from '@napi-rs/keyring';
 import { Effect } from 'effect';
-import { KeyringError, MissingPasswordError } from '../errors/errors';
+import { KeyringError, MissingCredentialsError } from '../errors/errors';
 import { keyringService } from '../schemas/account';
 
+// Each account keeps one credential in the keyring: its IMAP password, or the
+// refresh token of its Microsoft sign-in.
 export class Secrets extends Effect.Service<Secrets>()('mail/Secrets', {
   succeed: {
-    getPassword: (
+    getCredential: (
       account: string,
-    ): Effect.Effect<string, MissingPasswordError | KeyringError> =>
+    ): Effect.Effect<string, MissingCredentialsError | KeyringError> =>
       Effect.try({
         try: () => new Entry(keyringService, account).getPassword(),
         catch: (cause) =>
@@ -15,24 +17,24 @@ export class Secrets extends Effect.Service<Secrets>()('mail/Secrets', {
             message: `keyring read failed for ${account}: ${String(cause)}`,
           }),
       }).pipe(
-        Effect.flatMap((password) =>
-          password === null
+        Effect.flatMap((credential) =>
+          credential === null
             ? Effect.fail(
-                new MissingPasswordError({
+                new MissingCredentialsError({
                   account,
-                  message: `No stored password for ${account}. Ask the user to run: mailbox login --account ${account}`,
+                  message: `No stored credentials for ${account}. Ask the user to run: mailbox login --account ${account}`,
                 }),
               )
-            : Effect.succeed(password),
+            : Effect.succeed(credential),
         ),
       ),
-    setPassword: (
+    setCredential: (
       account: string,
-      password: string,
+      credential: string,
     ): Effect.Effect<void, KeyringError> =>
       Effect.try({
         try: () => {
-          new Entry(keyringService, account).setPassword(password);
+          new Entry(keyringService, account).setPassword(credential);
         },
         catch: (cause) =>
           new KeyringError({

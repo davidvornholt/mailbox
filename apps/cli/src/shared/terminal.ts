@@ -27,11 +27,14 @@ export const promptHidden = (
     input.resume();
     input.setEncoding('utf8');
     let value = '';
-    const stop = (result: HiddenPromptResult): void => {
+    const restore = (): void => {
       input.setRawMode(previousRaw);
       input.pause();
       input.removeAllListeners('data');
       process.stdout.write('\n');
+    };
+    const stop = (result: HiddenPromptResult): void => {
+      restore();
       resume(Effect.succeed(result));
     };
     const onData = (chunk: string): void => {
@@ -48,6 +51,9 @@ export const promptHidden = (
       }
     };
     input.on('data', onData);
+    // Restores the terminal when the prompt is interrupted, as when it loses a
+    // race.
+    return Effect.sync(restore);
   });
 
 export const stdinIsTerminal = (): boolean => process.stdin.isTTY === true;

@@ -3,7 +3,7 @@ import { Effect } from 'effect';
 import {
   ImapError,
   type MailError,
-  MissingPasswordError,
+  MissingCredentialsError,
 } from '../errors/errors';
 import { searchAllAccounts, searchOneAccount } from './account-search';
 import { mailboxHit, searchOptions } from './account-search.fixture';
@@ -48,9 +48,9 @@ describe('searchAllAccounts', () => {
           ]);
         default:
           return Effect.fail(
-            new MissingPasswordError({
+            new MissingCredentialsError({
               account,
-              message: `No stored password for ${account}`,
+              message: `No stored credentials for ${account}`,
             }),
           );
       }
@@ -79,8 +79,8 @@ describe('searchAllAccounts', () => {
     expect(result.failures).toEqual([
       {
         account: 'unavailable@example.com',
-        errorTag: 'MissingPasswordError',
-        message: 'No stored password for unavailable@example.com',
+        errorTag: 'MissingCredentialsError',
+        message: 'No stored credentials for unavailable@example.com',
       },
     ]);
   });
@@ -113,9 +113,9 @@ describe('searchAllAccounts', () => {
           searchOptions,
           (account) =>
             Effect.fail(
-              new MissingPasswordError({
+              new MissingCredentialsError({
                 account,
-                message: `No stored password for ${account}`,
+                message: `No stored credentials for ${account}`,
               }),
             ),
         ),
@@ -124,10 +124,10 @@ describe('searchAllAccounts', () => {
 
     expect(result).toMatchObject({ _tag: 'SearchAccountsError' });
     expect(result.message).toContain(
-      'first@example.com: No stored password for first@example.com',
+      'first@example.com: No stored credentials for first@example.com',
     );
     expect(result.message).toContain(
-      'second@example.com: No stored password for second@example.com',
+      'second@example.com: No stored credentials for second@example.com',
     );
   });
 });

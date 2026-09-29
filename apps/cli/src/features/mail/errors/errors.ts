@@ -11,8 +11,8 @@ export class UnknownAccountError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
-export class MissingPasswordError extends Data.TaggedError(
-  'MissingPasswordError',
+export class MissingCredentialsError extends Data.TaggedError(
+  'MissingCredentialsError',
 )<{
   readonly account: string;
   readonly message: string;
@@ -23,6 +23,10 @@ export class KeyringError extends Data.TaggedError('KeyringError')<{
 }> {}
 
 export class ImapError extends Data.TaggedError('ImapError')<{
+  readonly message: string;
+}> {}
+
+export class OAuthError extends Data.TaggedError('OAuthError')<{
   readonly message: string;
 }> {}
 
@@ -79,9 +83,10 @@ export class StaleUidError extends Data.TaggedError('StaleUidError')<{
 export type MailError =
   | ConfigError
   | UnknownAccountError
-  | MissingPasswordError
+  | MissingCredentialsError
   | KeyringError
   | ImapError
+  | OAuthError
   | SearchInputError
   | SearchAccountsError
   | AccountSearchTimeoutError

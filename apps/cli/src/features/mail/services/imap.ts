@@ -21,6 +21,7 @@ import { tagDrafts } from './draft-tags';
 import {
   closeClient,
   connectClient,
+  type ImapLogin,
   makeClient,
   retireClient,
   type WarmClient,
@@ -29,6 +30,8 @@ import {
 import { listFolders, readMessage } from './imap-ops';
 import { searchMailboxes } from './imap-search';
 import { makeWarmClientCache } from './imap-warm-cache';
+import { imapLoginFor } from './login';
+import { MicrosoftAuth } from './microsoft-auth';
 import { Secrets } from './secrets';
 
 export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
@@ -53,17 +56,23 @@ export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
 // a command that touches an account several times (such as a reply draft that
 // reads its source first) logs in once. The scope finalizer closes them.
 export class Imap extends Effect.Service<Imap>()('mail/Imap', {
-  dependencies: [MailConfig.Default, Secrets.Default],
+  dependencies: [MailConfig.Default, Secrets.Default, MicrosoftAuth.Default],
   scoped: Effect.gen(function* () {
     const config = yield* MailConfig;
     const secrets = yield* Secrets;
+    const microsoft = yield* MicrosoftAuth;
+    const credentials = {
+      get: secrets.getCredential,
+      store: secrets.setCredential,
+      refresh: microsoft.refresh,
+    } as const;
     const { clientFor, closeAll } = yield* makeWarmClientCache(
       (email: string) =>
         Effect.gen(function* () {
           const account = yield* config.getAccount(email);
-          const password = yield* secrets.getPassword(email);
-          const client = makeClient(account, password);
-          yield* connectClient(client, account.host);
+          const login = yield* imapLoginFor(account, credentials);
+          const client = makeClient(account, login);
+          yield* connectClient(client, account);
           return client;
         }),
     );
@@ -77,27 +86,27 @@ export class Imap extends Effect.Service<Imap>()('mail/Imap', {
     ) =>
       Effect.gen(function* () {
         const account = yield* config.getAccount(email);
-        const password = yield* secrets.getPassword(email);
+        const login = yield* imapLoginFor(account, credentials);
         return yield* searchWithDedicatedClient(
           email,
-          () => makeClient(account, password),
-          (candidate) => connectClient(candidate, account.host),
+          () => makeClient(account, login),
+          (candidate) => connectClient(candidate, account),
           (candidate) => searchMailboxes(candidate, options),
         );
       });
     yield* Effect.addFinalizer(() => closeAll);
     return {
       verify: (email: string) => clientFor(email).pipe(Effect.asVoid),
-      verifyCredentials: (
+      verifyLogin: (
         email: string,
-        password: string,
+        login: ImapLogin,
       ): Effect.Effect<void, MailError> =>
         Effect.gen(function* () {
           const account = yield* config.getAccount(email);
-          const client = makeClient(account, password);
+          const client = makeClient(account, login);
           yield* Effect.acquireUseRelease(
             Effect.succeed(client),
-            (candidate) => connectClient(candidate, account.host),
+            (candidate) => connectClient(candidate, account),
             closeClient,
           );
         }),

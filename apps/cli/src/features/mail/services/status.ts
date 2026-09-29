@@ -17,14 +17,15 @@ export const statusFromError = (
   error: MailError,
 ): AccountStatus => {
   switch (error._tag) {
-    case 'MissingPasswordError':
+    case 'MissingCredentialsError':
       return {
         email,
         ok: false,
-        state: 'no-password',
-        message: `no password stored; run: mailbox login --account ${email}`,
+        state: 'no-credentials',
+        message: `no credentials stored; run: mailbox login --account ${email}`,
       };
     case 'ImapError':
+    case 'OAuthError':
       return {
         email,
         ok: false,
@@ -64,14 +65,14 @@ const keyringOne = (
 ): Effect.Effect<AccountStatus, never, Imap | Secrets> =>
   Effect.gen(function* () {
     const secrets = yield* Secrets;
-    return yield* secrets.getPassword(email).pipe(
+    return yield* secrets.getCredential(email).pipe(
       Effect.match({
         onSuccess: () =>
           ({
             email,
             ok: true,
-            state: 'password-stored',
-            message: 'password stored (not verified)',
+            state: 'credentials-stored',
+            message: 'credentials stored (not verified)',
           }) as const,
         onFailure: (error) => statusFromError(email, error),
       }),
@@ -79,7 +80,7 @@ const keyringOne = (
   });
 
 // Report the auth state of each account. `verify: true` connects to each IMAP
-// server to prove the stored password works; `verify: false` only checks the
+// server to prove the stored credentials work; `verify: false` only checks the
 // keyring (fast, offline).
 export const checkAccounts = (
   emails: ReadonlyArray<string>,

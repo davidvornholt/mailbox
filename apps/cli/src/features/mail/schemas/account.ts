@@ -1,8 +1,14 @@
 import { Either, ParseResult, Schema } from 'effect';
 
-// Keyring service namespace for stored IMAP passwords. The passwords live in the
-// OS keyring (see services/secrets.ts), keyed by account email.
+// Keyring service namespace for stored credentials: IMAP passwords, or refresh
+// tokens for Microsoft accounts. They live in the OS keyring (see
+// services/secrets.ts), keyed by account email.
 export const keyringService = 'mailbox';
+
+// How an account logs in to IMAP: with a password, or with a Microsoft sign-in
+// for Outlook.com and Microsoft 365, which no longer accept passwords.
+const AccountAuth = Schema.Literal('password', 'microsoft');
+export type AccountAuth = typeof AccountAuth.Type;
 
 const implicitTlsPort = 993;
 const maxPort = 65_535;
@@ -16,6 +22,7 @@ const AccountEntry = Schema.Struct({
   }),
   secure: Schema.optionalWith(Schema.Boolean, { default: () => true }),
   user: Schema.optional(Schema.NonEmptyTrimmedString),
+  auth: Schema.optionalWith(AccountAuth, { default: () => 'password' }),
 });
 
 const sameEmail = (left: string, right: string): boolean =>
@@ -43,6 +50,7 @@ export type Account = {
   readonly port: number;
   readonly secure: boolean;
   readonly user: string;
+  readonly auth: AccountAuth;
 };
 
 export const findAccount = (

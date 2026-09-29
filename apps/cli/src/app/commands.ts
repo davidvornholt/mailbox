@@ -25,10 +25,14 @@ const messageFlags = {
   uid: flag.integer('n', 'Message uid from a search hit'),
 } as const;
 
-const selectedEmails = (only: string | undefined) =>
-  only === undefined
-    ? MailConfig.pipe(Effect.map((config) => config.emails))
-    : configuredEmail(only).pipe(Effect.map((email) => [email]));
+const selectedAccounts = (only: string | undefined) =>
+  MailConfig.pipe(
+    Effect.flatMap((config) =>
+      only === undefined
+        ? Effect.succeed(config.accounts)
+        : config.getAccount(only).pipe(Effect.map((found) => [found])),
+    ),
+  );
 
 const accounts = defineCommand(
   { name: 'accounts', summary: 'List configured accounts', flags: {} },
@@ -51,7 +55,7 @@ const status = defineCommand(
     name: 'status',
     summary: 'Check that each account can log in',
     description:
-      'Check that each account has a password in the OS keyring and that it logs in. Exits 1 when any account is not ready; its message says what to do.',
+      'Check that each account has credentials in the OS keyring and that it logs in. Exits 1 when any account is not ready; its message says what to do.',
     flags: {
       account: optionalAccount('Check only this account'),
       offline: flag.switch('Only check the keyring; do not connect'),
@@ -59,10 +63,11 @@ const status = defineCommand(
   },
   (values): CommandEffect =>
     Effect.gen(function* () {
-      const emails = yield* selectedEmails(values.account);
-      const results = yield* checkAccounts(emails, {
-        verify: !values.offline,
-      });
+      const selected = yield* selectedAccounts(values.account);
+      const results = yield* checkAccounts(
+        selected.map(({ email }) => email),
+        { verify: !values.offline },
+      );
       return json(
         results,
         results.some((result) => !result.ok),
@@ -73,9 +78,9 @@ const status = defineCommand(
 const login = defineCommand(
   {
     name: 'login',
-    summary: 'Store IMAP passwords in the OS keyring',
+    summary: 'Log in and store credentials in the OS keyring',
     description:
-      'Prompt for each IMAP password (or app password), check it against the server, and store it in the OS keyring. Needs an interactive terminal: agents should ask the user to run it.',
+      'Prompt for each IMAP password (or app password), or sign in with Microsoft for accounts with auth = "microsoft". Check the login against the server and store it in the OS keyring. Needs an interactive terminal: agents should ask the user to run it.',
     flags: { account: optionalAccount('Log in to only this account') },
   },
   (values): CommandEffect =>
@@ -83,11 +88,11 @@ const login = defineCommand(
       if (!stdinIsTerminal()) {
         return yield* new UsageError({
           message:
-            'mailbox login reads passwords from an interactive terminal; ask the user to run it',
+            'mailbox login needs an interactive terminal; ask the user to run it',
         });
       }
-      const emails = yield* selectedEmails(values.account);
-      const succeeded = yield* loginAccounts(emails);
+      const selected = yield* selectedAccounts(values.account);
+      const succeeded = yield* loginAccounts(selected);
       return printed(!succeeded);
     }),
 );

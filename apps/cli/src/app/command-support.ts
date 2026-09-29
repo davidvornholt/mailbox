@@ -2,6 +2,7 @@ import { Data, Effect } from 'effect';
 import type { MailError } from '../features/mail/errors/errors';
 import { MailConfig } from '../features/mail/services/config';
 import type { Imap } from '../features/mail/services/imap';
+import type { MicrosoftAuth } from '../features/mail/services/microsoft-auth';
 import type { Secrets } from '../features/mail/services/secrets';
 import type { UsageError } from '../shared/command-line';
 
@@ -31,7 +32,7 @@ export type CommandError = MailError | UsageError | FileError;
 export type CommandEffect = Effect.Effect<
   Outcome,
   CommandError,
-  MailConfig | Secrets | Imap
+  MailConfig | Secrets | MicrosoftAuth | Imap
 >;
 
 // Accounts match case-insensitively; services and the keyring use the
