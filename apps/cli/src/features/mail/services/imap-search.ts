@@ -1,9 +1,10 @@
 import { Chunk, Effect, Stream } from 'effect';
-import type { FetchMessageObject, ImapFlow } from 'imapflow';
+import type { FetchMessageObject, FetchQueryObject, ImapFlow } from 'imapflow';
 import { ImapError } from '../errors/errors';
 import type { SearchHit, SearchOptions } from '../schemas/mail';
 import { imapError, listMailboxes } from './imap-ops';
 import { buildSearchQuery } from './imap-query';
+import { uidSets } from './imap-uid-sets';
 import { lockMailbox } from './mailbox-lock';
 import { selectSearchFolders } from './search-folders';
 
@@ -47,6 +48,62 @@ const toCandidate = (
   };
 };
 
+type DatedUid = {
+  readonly uid: number;
+  readonly receivedAt: string;
+};
+
+const newestUidFirst = (left: DatedUid, right: DatedUid): number =>
+  right.receivedAt.localeCompare(left.receivedAt) || right.uid - left.uid;
+
+// Fetch one UID set at a time, so no command line grows with the match count.
+const fetchByUid = (
+  client: ImapFlow,
+  uids: ReadonlyArray<number>,
+  query: FetchQueryObject,
+  label: string,
+): Effect.Effect<ReadonlyArray<FetchMessageObject>, ImapError> =>
+  Stream.fromIterable(uidSets(uids)).pipe(
+    Stream.flatMap((set) =>
+      Stream.fromAsyncIterable(
+        client.fetch(set, query, { uid: true }),
+        imapError(label),
+      ),
+    ),
+    Stream.runCollect,
+    Effect.map(Chunk.toReadonlyArray),
+  );
+
+// UID order is not date order: migrated, appended, and moved messages get new
+// UIDs whatever their date. When a folder has more matches than the limit,
+// fetch only the internal date of every match and keep the newest. Exchange
+// Online and Gmail do not support IMAP SORT, so the client ranks.
+const newestUids = (
+  client: ImapFlow,
+  folder: string,
+  uids: ReadonlyArray<number>,
+  limit: number,
+): Effect.Effect<ReadonlyArray<number>, ImapError> =>
+  uids.length <= limit
+    ? Effect.succeed(uids)
+    : fetchByUid(
+        client,
+        uids,
+        { uid: true, internalDate: true },
+        `fetch dates of search results from ${folder}`,
+      ).pipe(
+        Effect.map((messages) =>
+          messages
+            .map(({ uid, internalDate }) => ({
+              uid,
+              receivedAt: toIsoDate(internalDate),
+            }))
+            .sort(newestUidFirst)
+            .slice(0, limit)
+            .map(({ uid }) => uid),
+        ),
+      );
+
 const searchOneFolder = (
   client: ImapFlow,
   folder: string,
@@ -67,23 +124,17 @@ const searchOneFolder = (
       catch: imapError(`search ${folder}`),
     });
     const uids = found === false || found === undefined ? [] : found;
-    const selected = uids.slice(-options.limit).reverse();
-    if (selected.length === 0) {
+    if (uids.length === 0) {
       return [];
     }
-    const messages = yield* Stream.runCollect(
-      Stream.fromAsyncIterable(
-        client.fetch(
-          selected,
-          { uid: true, envelope: true, internalDate: true },
-          { uid: true },
-        ),
-        imapError(`fetch search results from ${folder}`),
-      ),
+    const selected = yield* newestUids(client, folder, uids, options.limit);
+    const messages = yield* fetchByUid(
+      client,
+      selected,
+      { uid: true, envelope: true, internalDate: true },
+      `fetch search results from ${folder}`,
     );
-    return Chunk.toReadonlyArray(messages).map((message) =>
-      toCandidate(message, folder, uidValidity),
-    );
+    return messages.map((message) => toCandidate(message, folder, uidValidity));
   }).pipe(Effect.scoped);
 
 const newestFirst = (left: MailboxSearchHit, right: MailboxSearchHit): number =>

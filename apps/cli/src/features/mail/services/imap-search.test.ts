@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import type { FetchMessageObject, ImapFlow, ListResponse } from 'imapflow';
+import type {
+  FetchMessageObject,
+  FetchQueryObject,
+  ImapFlow,
+  ListResponse,
+} from 'imapflow';
 import { searchMailboxes } from './imap-search';
 
 type MailboxMessages = ReadonlyMap<string, ReadonlyArray<FetchMessageObject>>;
@@ -17,6 +22,20 @@ const listedFolder = (path: string, specialUse?: string): ListResponse => ({
   listed: true,
   subscribed: true,
 });
+
+const uidsInSet = (set: string): ReadonlySet<number> =>
+  new Set(
+    set.split(',').flatMap((range) => {
+      const [first = 0, last = first] = range.split(':').map(Number);
+      return Array.from(
+        { length: last - first + 1 },
+        (_, index) => first + index,
+      );
+    }),
+  );
+
+const fetchedItems = (query: FetchQueryObject): string =>
+  Object.keys(query).join(',');
 
 const fakeClient = (
   folders: ReadonlyArray<ListResponse>,
@@ -41,18 +60,24 @@ const fakeClient = (
       Promise.resolve(
         (messages.get(selectedFolder) ?? []).map(({ uid }) => uid),
       ),
-    fetch: (uids: ReadonlyArray<number>) =>
-      (async function* () {
+    fetch: (set: string, query: FetchQueryObject) => {
+      events.push(`fetch:${set} ${fetchedItems(query)}`);
+      return (async function* () {
         await Promise.resolve();
-        const selectedUids = new Set(uids);
-        for (const message of messages.get(selectedFolder) ?? []) {
+        const selectedUids = uidsInSet(set);
+        for (const { envelope, ...message } of messages.get(selectedFolder) ??
+          []) {
           if (selectedUids.has(message.uid)) {
-            yield message;
+            yield query.envelope === true ? { ...message, envelope } : message;
           }
         }
-      })(),
+      })();
+    },
   } as unknown as ImapFlow;
 };
+
+const oldUid = 3;
+const oldestUid = 4;
 
 const message = (
   uid: number,
@@ -71,7 +96,7 @@ const message = (
   },
 });
 
-describe('searchMailboxes', () => {
+describe('searchMailboxes in one folder', () => {
   it('searches an exact folder without listing mailboxes', async () => {
     const events: Array<string> = [];
     const client = fakeClient(
@@ -95,9 +120,50 @@ describe('searchMailboxes', () => {
       uid: 1,
       uidValidity: '111',
     });
-    expect(events).toEqual(['lock:INBOX', 'release:INBOX']);
+    expect(events).toEqual([
+      'lock:INBOX',
+      'fetch:1 uid,envelope,internalDate',
+      'release:INBOX',
+    ]);
   });
 
+  it('returns the newest matches by date when UID order differs', async () => {
+    // Migrated mail can give the newest messages the lowest UIDs.
+    const events: Array<string> = [];
+    const client = fakeClient(
+      [],
+      new Map([
+        [
+          'INBOX',
+          [
+            message(1, '2026-09-16T15:23:32Z', '<newest@example.com>'),
+            message(2, '2026-09-15T13:01:12Z', '<newer@example.com>'),
+            message(oldUid, '2026-04-10T10:11:57Z', '<old@example.com>'),
+            message(oldestUid, '2026-03-17T16:37:42Z', '<oldest@example.com>'),
+          ],
+        ],
+      ]),
+      events,
+    );
+    const hits = await Effect.runPromise(
+      searchMailboxes(client, { scope: 'folder', folder: 'INBOX', limit: 2 }),
+    );
+    expect(hits.map(({ hit: { uid, subject } }) => ({ uid, subject }))).toEqual(
+      [
+        { uid: 1, subject: '<newest@example.com>' },
+        { uid: 2, subject: '<newer@example.com>' },
+      ],
+    );
+    expect(events).toEqual([
+      'lock:INBOX',
+      'fetch:1:4 uid,internalDate',
+      'fetch:1:2 uid,envelope,internalDate',
+      'release:INBOX',
+    ]);
+  });
+});
+
+describe('searchMailboxes across folders', () => {
   it('merges, deduplicates, sorts, and limits fallback folder results', async () => {
     const events: Array<string> = [];
     const folders = [
@@ -128,10 +194,13 @@ describe('searchMailboxes', () => {
     expect(events).toEqual([
       'list',
       'lock:INBOX',
+      'fetch:1 uid,envelope,internalDate',
       'release:INBOX',
       'lock:Archive',
+      'fetch:2 uid,envelope,internalDate',
       'release:Archive',
       'lock:Sent',
+      `fetch:${sentUid} uid,envelope,internalDate`,
       'release:Sent',
     ]);
   });
