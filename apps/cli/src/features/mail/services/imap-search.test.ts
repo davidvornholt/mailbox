@@ -247,24 +247,77 @@ describe('searchMailboxes across folders', () => {
   });
 });
 
-it.each([false, undefined])(
-  'handles absent IMAP search results (%s) without fetching',
-  async (missing) => {
-    const events: Array<string> = [];
-    const client = fakeClient([], new Map(), events);
-    client.search = (() => Promise.resolve(missing)) as ImapFlow['search'];
+describe('searchMailboxes when the server rejects the search', () => {
+  const rejectingClient = (
+    folders: ReadonlyArray<ListResponse>,
+    events: Array<string>,
+    result: false | undefined = false,
+  ): ImapFlow => {
+    const client = fakeClient(folders, new Map(), events);
+    client.search = (() => Promise.resolve(result)) as ImapFlow['search'];
     client.fetch = () => {
-      throw new Error('empty search must not fetch');
+      throw new Error('a rejected search must not fetch');
     };
-    const hits = await Effect.runPromise(
-      searchMailboxes(client, {
-        scope: 'folder',
-        folder: 'INBOX',
-        query: 'missing',
-        limit: 20,
-      }),
+    return client;
+  };
+
+  it.each([false, undefined])(
+    'fails instead of reporting no matches (%s)',
+    async (result) => {
+      const events: Array<string> = [];
+      const error = await Effect.runPromise(
+        Effect.flip(
+          searchMailboxes(rejectingClient([], events, result), {
+            scope: 'folder',
+            folder: 'INBOX',
+            query: 'missing',
+            limit: 20,
+          }),
+        ),
+      );
+      expect(error).toMatchObject({
+        _tag: 'ImapError',
+        message: 'search INBOX failed: the server rejected the search.',
+      });
+      expect(events).toEqual(['lock:INBOX', 'release:INBOX']);
+    },
+  );
+
+  it.each([
+    { query: 'André' },
+    { from: 'Schönberg' },
+    { subject: 'Übersetzung' },
+  ])('names the ASCII limit for non-ASCII text (%o)', async (criteria) => {
+    const error = await Effect.runPromise(
+      Effect.flip(
+        searchMailboxes(rejectingClient([], []), {
+          scope: 'folder',
+          folder: 'INBOX',
+          ...criteria,
+          limit: 20,
+        }),
+      ),
     );
-    expect(hits).toEqual([]);
-    expect(events).toEqual(['lock:INBOX', 'release:INBOX']);
-  },
-);
+    expect(error.message).toBe(
+      'search INBOX failed: the server rejected the search. Some servers, such as Exchange Online, search only ASCII text. Retry without accented or other non-ASCII characters.',
+    );
+  });
+
+  it('stops at the first rejected folder', async () => {
+    // Exchange Online drops the connection after repeated rejected commands.
+    const events: Array<string> = [];
+    const client = rejectingClient(
+      [listedFolder('INBOX', '\\Inbox'), listedFolder('Sent', '\\Sent')],
+      events,
+    );
+    const error = await Effect.runPromise(
+      Effect.flip(
+        searchMailboxes(client, { scope: 'all', query: 'André', limit: 20 }),
+      ),
+    );
+    expect(error.message).toStartWith(
+      'search INBOX failed: the server rejected the search.',
+    );
+    expect(events).toEqual(['list', 'lock:INBOX', 'release:INBOX']);
+  });
+});
