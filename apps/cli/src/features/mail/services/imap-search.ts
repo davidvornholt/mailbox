@@ -104,6 +104,24 @@ const newestUids = (
         ),
       );
 
+const nonAsciiText = /\P{ASCII}/u;
+
+// imapflow resolves a search the server rejected to false instead of throwing.
+// Exchange Online rejects non-ASCII search text: it answers BAD to the quoted
+// UTF-8 string imapflow sends, and NO [BADCHARSET (US-ASCII)] to a literal.
+const rejectedSearchMessage = (
+  folder: string,
+  options: SearchOptions,
+): string => {
+  const hasNonAsciiText = [options.query, options.from, options.subject].some(
+    (text) => text !== undefined && nonAsciiText.test(text),
+  );
+  const hint = hasNonAsciiText
+    ? ' Some servers, such as Exchange Online, search only ASCII text. Retry without accented or other non-ASCII characters.'
+    : '';
+  return `search ${folder} failed: the server rejected the search.${hint}`;
+};
+
 const searchOneFolder = (
   client: ImapFlow,
   folder: string,
@@ -123,7 +141,12 @@ const searchOneFolder = (
       try: () => client.search(buildSearchQuery(options), { uid: true }),
       catch: imapError(`search ${folder}`),
     });
-    const uids = found === false || found === undefined ? [] : found;
+    const uids =
+      found === false || found === undefined
+        ? yield* Effect.fail(
+            new ImapError({ message: rejectedSearchMessage(folder, options) }),
+          )
+        : found;
     if (uids.length === 0) {
       return [];
     }
