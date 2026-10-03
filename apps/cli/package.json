@@ -24,7 +24,7 @@
     "@types/bun": "^1.4.2",
     "@types/html-to-text": "^9.0.4",
     "@types/mailparser": "^3.4.6",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.3",
     "@types/nodemailer": "^8.0.2",
     "typescript": "7.0.2"
   }
