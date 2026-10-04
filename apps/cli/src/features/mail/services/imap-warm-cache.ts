@@ -1,4 +1,4 @@
-import { Effect, Ref } from 'effect';
+import { Effect, Ref, Semaphore } from 'effect';
 import { retireClient, type WarmClient } from './imap-client';
 
 type WarmClientCache<Client extends WarmClient, OpenError> = {
@@ -18,7 +18,7 @@ export const makeWarmClientCache = <Client extends WarmClient, OpenError>(
 ): Effect.Effect<WarmClientCache<Client, OpenError>> =>
   Effect.gen(function* () {
     const clients = yield* Ref.make<ReadonlyMap<string, Client>>(new Map());
-    const openLocks = yield* Ref.make<ReadonlyMap<string, Effect.Semaphore>>(
+    const openLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(
       new Map(),
     );
     const lockFor = (email: string) =>
@@ -27,7 +27,7 @@ export const makeWarmClientCache = <Client extends WarmClient, OpenError>(
         if (existing !== undefined) {
           return [existing, locks] as const;
         }
-        const created = Effect.unsafeMakeSemaphore(1);
+        const created = Semaphore.makeUnsafe(1);
         return [created, new Map(locks).set(email, created)] as const;
       });
     const cachedUsable = (email: string) =>

@@ -1,4 +1,4 @@
-import { Effect, Either } from 'effect';
+import { Context, Effect, Layer, Result } from 'effect';
 import { ConfigError, UnknownAccountError } from '../errors/errors';
 import { type Account, decodeAccounts, findAccount } from '../schemas/account';
 
@@ -47,30 +47,37 @@ const loadAccounts = Effect.gen(function* () {
         message: `The account config at ${path} is not valid TOML: ${String(cause)}`,
       }),
   });
-  return yield* Either.match(decodeAccounts(parsed), {
-    onLeft: (details) =>
+  return yield* Result.match(decodeAccounts(parsed), {
+    onFailure: (details) =>
       Effect.fail(
         new ConfigError({
           message: `Invalid account config at ${path}:\n${details}`,
         }),
       ),
-    onRight: (accounts) => Effect.succeed(accounts),
+    onSuccess: (accounts) => Effect.succeed(accounts),
   });
 });
 
-export class MailConfig extends Effect.Service<MailConfig>()(
-  'mail/MailConfig',
+export class MailConfig extends Context.Service<
+  MailConfig,
   {
-    effect: Effect.gen(function* () {
+    readonly accounts: ReadonlyArray<Account>;
+    readonly emails: ReadonlyArray<string>;
+    // Matches case-insensitively and returns the configured spelling.
+    readonly getAccount: (
+      email: string,
+    ) => Effect.Effect<Account, UnknownAccountError>;
+  }
+>()('mail/MailConfig') {
+  static readonly layer = Layer.effect(
+    MailConfig,
+    Effect.gen(function* () {
       const accounts = yield* loadAccounts;
       const emails = accounts.map((account) => account.email);
-      return {
+      return MailConfig.of({
         accounts,
         emails,
-        // Matches case-insensitively and returns the configured spelling.
-        getAccount: (
-          email: string,
-        ): Effect.Effect<Account, UnknownAccountError> => {
+        getAccount: (email) => {
           const account = findAccount(accounts, email);
           return account === undefined
             ? Effect.fail(
@@ -81,7 +88,7 @@ export class MailConfig extends Effect.Service<MailConfig>()(
               )
             : Effect.succeed(account);
         },
-      } as const;
+      });
     }),
-  },
-) {}
+  );
+}

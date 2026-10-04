@@ -57,15 +57,9 @@ const signInWithMicrosoft = (
   Effect.gen(function* () {
     const microsoft = yield* MicrosoftAuth;
     const device = yield* microsoft.requestDeviceCode;
+    // The prompt goes first: Effect 4 starts racers in order and stops
+    // starting them once one has finished, and the code must always show.
     return yield* Effect.raceFirst(
-      microsoft.awaitSignIn(device).pipe(
-        Effect.map(
-          (tokens): Obtained => ({
-            _tag: 'obtained',
-            login: microsoftLogin(tokens),
-          }),
-        ),
-      ),
       prompt(
         `Sign in to Microsoft as ${email}: open ${device.verificationUri} and enter the code ${device.userCode}\nWaiting for sign-in (press Enter to skip): `,
       ).pipe(
@@ -74,6 +68,14 @@ const signInWithMicrosoft = (
             result._tag === 'cancelled'
               ? cancelled
               : { _tag: 'skipped', message: 'sign-in skipped.' },
+        ),
+      ),
+      microsoft.awaitSignIn(device).pipe(
+        Effect.map(
+          (tokens): Obtained => ({
+            _tag: 'obtained',
+            login: microsoftLogin(tokens),
+          }),
         ),
       ),
     );
@@ -112,32 +114,18 @@ export const loginAccounts = (
   prompt: HiddenPrompt = promptHidden,
 ): Effect.Effect<boolean, never, Imap | Secrets | MicrosoftAuth> =>
   Effect.gen(function* () {
-    const results = yield* Effect.reduceWhile(
-      accounts,
-      [] as ReadonlyArray<LoginResult>,
-      {
-        while: (previous) => previous.at(-1)?._tag !== 'cancelled',
-        body: (previous, account) =>
-          loginAccount(account, prompt).pipe(
-            Effect.map(
-              (result): ReadonlyArray<LoginResult> => [
-                ...previous,
-                { email: account.email, ...result },
-              ],
-            ),
-            Effect.catchAll((error) =>
-              Effect.succeed([
-                ...previous,
-                {
-                  email: account.email,
-                  _tag: 'failed',
-                  message: error.message,
-                } as const,
-              ]),
-            ),
-          ),
-      },
-    );
+    const results: Array<LoginResult> = [];
+    for (const account of accounts) {
+      const result = yield* loginAccount(account, prompt).pipe(
+        Effect.catch((error) =>
+          Effect.succeed({ _tag: 'failed', message: error.message } as const),
+        ),
+      );
+      results.push({ email: account.email, ...result });
+      if (result._tag === 'cancelled') {
+        break;
+      }
+    }
     yield* Effect.forEach(
       results,
       (result) =>

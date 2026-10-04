@@ -1,4 +1,4 @@
-import { Duration, Effect, Exit, Ref } from 'effect';
+import { Duration, Effect, Exit, Fiber, Ref } from 'effect';
 import { ImapFlow } from 'imapflow';
 import {
   AccountSearchTimeoutError,
@@ -114,6 +114,24 @@ export const closeClient = (client: WarmClient): Effect.Effect<void> =>
       : Effect.void,
   );
 
+// Lets a timeout or caller interruption return without waiting for `self` to
+// finish: `self` runs in a detached fiber, and interrupting the caller only
+// signals that fiber. Effect 4 removed `Effect.disconnect`, which did this.
+// The fiber starts at once, as in Effect 3, so work is under way before a
+// caller can retire its client.
+const disconnect = <A, E, R>(
+  self: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.flatMap(
+      Effect.forkDetach(restore(self), { startImmediately: true }),
+      (fiber) =>
+        restore(Fiber.join(fiber)).pipe(
+          Effect.onInterrupt(() => Effect.forkDetach(Fiber.interrupt(fiber))),
+        ),
+    ),
+  );
+
 export const withClientSearchDeadline = <Client, Result>(
   account: string,
   client: Client,
@@ -132,14 +150,16 @@ export const withClientSearchDeadline = <Client, Result>(
     );
     return yield* search(client).pipe(
       // The deadline may win while native IMAP promises or iterators continue.
-      Effect.disconnect,
-      Effect.timeoutFail({
+      disconnect,
+      Effect.timeoutOrElse({
         duration: Duration.seconds(accountSearchTimeoutSeconds),
-        onTimeout: () =>
-          new AccountSearchTimeoutError({
-            account,
-            message: `Search for ${account} did not complete within ${accountSearchTimeoutSeconds} seconds. Retry with this account alone or check the server.`,
-          }),
+        orElse: () =>
+          Effect.fail(
+            new AccountSearchTimeoutError({
+              account,
+              message: `Search for ${account} did not complete within ${accountSearchTimeoutSeconds} seconds. Retry with this account alone or check the server.`,
+            }),
+          ),
       }),
       // Keep retirement outside disconnect so caller interruption also owns it.
       Effect.ensuring(retireOnce),

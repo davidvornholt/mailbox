@@ -1,4 +1,4 @@
-import { Chunk, Effect, Stream } from 'effect';
+import { Effect, Stream } from 'effect';
 import type { ImapFlow } from 'imapflow';
 import {
   AttachmentNotFoundError,
@@ -28,7 +28,7 @@ const collectContent = (content: AsyncIterable<unknown>) =>
   ).pipe(
     Stream.mapEffect(toBuffer),
     Stream.runCollect,
-    Effect.map((chunks) => Buffer.concat(Chunk.toReadonlyArray(chunks))),
+    Effect.map((chunks) => Buffer.concat(chunks)),
   );
 
 const contentTypeOr = (value: unknown, fallback: string): string =>

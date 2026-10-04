@@ -7,8 +7,8 @@ import { Secrets } from '../features/mail/services/secrets';
 // Everything a command may need. Imap connects lazily, so commands that only
 // read the config never touch the network.
 export const appLayer = Layer.mergeAll(
-  MailConfig.Default,
-  Secrets.Default,
-  MicrosoftAuth.Default,
-  Imap.Default,
+  MailConfig.layer,
+  Secrets.layer,
+  MicrosoftAuth.layer,
+  Imap.layer,
 );

@@ -21,7 +21,7 @@ export class ControlledClient {
       return Effect.succeed(this.result);
     }
     return Effect.uninterruptible(
-      Effect.async((resume) => {
+      Effect.callback((resume) => {
         this.outstanding += 1;
         this.#waiters.add(resume);
       }),

@@ -46,8 +46,8 @@ const execute = (command: CommandEffect): Effect.Effect<void> =>
   command.pipe(
     Effect.provide(appLayer),
     Effect.flatMap(emit),
-    Effect.catchAll(report),
-    Effect.catchAllDefect((defect) =>
+    Effect.catch(report),
+    Effect.catchDefect((defect) =>
       report({ _tag: 'UnexpectedError', message: String(defect) }),
     ),
   );

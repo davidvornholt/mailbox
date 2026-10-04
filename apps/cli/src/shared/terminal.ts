@@ -15,7 +15,7 @@ export type HiddenPromptResult =
 export const promptHidden = (
   question: string,
 ): Effect.Effect<HiddenPromptResult> =>
-  Effect.async<HiddenPromptResult>((resume) => {
+  Effect.callback<HiddenPromptResult>((resume) => {
     const input = process.stdin;
     if (input.isTTY !== true) {
       resume(Effect.succeed({ _tag: 'entered', value: '' } as const));

@@ -57,8 +57,8 @@ describe('makeClient', () => {
       closeCalls += 1;
     };
     const program = Effect.gen(function* () {
-      const fiber = yield* Effect.fork(connectClient(client, account));
-      yield* Effect.yieldNow();
+      const fiber = yield* Effect.forkChild(connectClient(client, account));
+      yield* Effect.yieldNow;
       yield* Fiber.interrupt(fiber);
     });
 

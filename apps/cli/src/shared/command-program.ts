@@ -1,4 +1,4 @@
-import { Either } from 'effect';
+import { Result } from 'effect';
 import { type Command, pad, UsageError } from './command-line';
 
 // Dispatches argv to one of a program's commands or to help text.
@@ -76,13 +76,13 @@ export const resolve = <A>(
   if (args.some(isHelpFlag)) {
     return { _tag: 'Help', text: command.help(program.name) };
   }
-  return Either.match(command.parse(args), {
-    onLeft: (problems) => ({
+  return Result.match(command.parse(args), {
+    onFailure: (problems) => ({
       _tag: 'Invalid' as const,
       error: new UsageError({
         message: `${program.name} ${command.name}: ${problems.join('; ')}\n${command.usage(program.name)}`,
       }),
     }),
-    onRight: (value) => ({ _tag: 'Run' as const, value }),
+    onSuccess: (value) => ({ _tag: 'Run' as const, value }),
   });
 };

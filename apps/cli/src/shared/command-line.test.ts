@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Either } from 'effect';
+import { Result } from 'effect';
 import { defineCommand, flag } from './command-line';
 
 const show = defineCommand(
@@ -27,23 +27,28 @@ const tag = defineCommand(
   (values) => values,
 );
 const problems = (args: ReadonlyArray<string>) =>
-  Either.match(show.parse(args), {
-    onLeft: (found) => found,
-    onRight: () => [],
+  Result.match(show.parse(args), {
+    onFailure: (found) => found,
+    onSuccess: () => [],
   });
 
 describe('defineCommand parse', () => {
   it('reads kebab-case options in both value forms', () => {
     expect(show.parse(['--account=a@b.c', '--uid', '7', '--html'])).toEqual(
-      Either.right({ account: 'a@b.c', uid: 7, limit: undefined, html: true }),
+      Result.succeed({
+        account: 'a@b.c',
+        uid: 7,
+        limit: undefined,
+        html: true,
+      }),
     );
   });
 
   it('collects repeated values for list flags', () => {
     expect(tag.parse(['--uid', '1', '--uid=2'])).toEqual(
-      Either.right({ uid: [1, 2], attach: [] }),
+      Result.succeed({ uid: [1, 2], attach: [] }),
     );
-    expect(tag.parse([])).toEqual(Either.left(['missing --uid <n>']));
+    expect(tag.parse([])).toEqual(Result.fail(['missing --uid <n>']));
   });
 
   it('reports every problem at once', () => {

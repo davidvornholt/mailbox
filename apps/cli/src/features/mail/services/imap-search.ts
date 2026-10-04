@@ -1,4 +1,4 @@
-import { Chunk, Effect, Stream } from 'effect';
+import { Effect, Stream } from 'effect';
 import type { FetchMessageObject, FetchQueryObject, ImapFlow } from 'imapflow';
 import { ImapError } from '../errors/errors';
 import type { SearchHit, SearchOptions } from '../schemas/mail';
@@ -71,7 +71,6 @@ const fetchByUid = (
       ),
     ),
     Stream.runCollect,
-    Effect.map(Chunk.toReadonlyArray),
   );
 
 // UID order is not date order: migrated, appended, and moved messages get new

@@ -142,13 +142,13 @@ it.each([false, undefined])(
       },
     } as unknown as ImapFlow;
     const result = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         readAttachment(client, 'INBOX', messageUid, attachmentPart),
       ),
     );
     expect(result).toMatchObject({
-      _tag: 'Left',
-      left: { _tag: 'MessageNotFoundError' },
+      _tag: 'Failure',
+      failure: { _tag: 'MessageNotFoundError' },
     });
     expect(released.value).toBe(true);
   },
