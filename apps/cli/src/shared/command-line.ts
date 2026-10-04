@@ -1,12 +1,12 @@
-import { Data, Either } from 'effect';
+import { Result, Schema } from 'effect';
 
 // A small declarative command-line layer: long options only, no positional
 // arguments, so every value an agent passes is named. Options are declared in
 // camelCase and written in kebab-case (`uidValidity` is `--uid-validity`).
 
-export class UsageError extends Data.TaggedError('UsageError')<{
-  readonly message: string;
-}> {}
+export class UsageError extends Schema.TaggedError<UsageError>()('UsageError', {
+  message: Schema.String,
+}) {}
 
 type ValueFlag<Kind extends string, Required extends boolean> = {
   readonly kind: Kind;
@@ -262,7 +262,7 @@ export type Command<A> = {
   readonly help: (program: string) => string;
   readonly parse: (
     args: ReadonlyArray<string>,
-  ) => Either.Either<A, ReadonlyArray<string>>;
+  ) => Result.Result<A, ReadonlyArray<string>>;
 };
 
 export const pad = (rows: ReadonlyArray<readonly [string, string]>): string => {
@@ -313,8 +313,8 @@ export const defineCommand = <const F extends Flags, A>(
       // valueFor produces each value from the same spec that types
       // FlagValues<F>, so the assembled record has that shape.
       return problems.length === 0
-        ? Either.right(build(values as FlagValues<F>))
-        : Either.left(problems);
+        ? Result.succeed(build(values as FlagValues<F>))
+        : Result.fail(problems);
     },
   };
 };

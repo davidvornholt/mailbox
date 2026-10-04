@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect, Fiber, TestClock, TestContext } from 'effect';
+import { Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
 import { searchAllAccounts } from './account-search';
 import { searchOptions } from './account-search.fixture';
 import { withClientSearchDeadline } from './imap-client';
@@ -32,7 +33,7 @@ describe('searchAllAccounts timeout retirement', () => {
 
       const results = yield* Effect.forEach([0, 1], () =>
         Effect.gen(function* () {
-          const fiber = yield* Effect.fork(
+          const fiber = yield* Effect.forkChild(
             searchAllAccounts(
               ['healthy@example.com', 'stalled@example.com'],
               searchOptions,
@@ -48,7 +49,7 @@ describe('searchAllAccounts timeout retirement', () => {
     });
 
     const { results, laterHits } = await Effect.runPromise(
-      program.pipe(Effect.provide(TestContext.TestContext)),
+      program.pipe(Effect.provide(TestClock.layer())),
     );
     const [firstStalled, secondStalled, replacement] = stalledClients;
     expect(
@@ -87,7 +88,7 @@ describe('searchAllAccounts all-stalled lifecycle', () => {
             Effect.sync(() => client.close()),
           );
         });
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         Effect.flip(
           searchAllAccounts(
             ['first@example.com', 'second@example.com'],
@@ -101,7 +102,7 @@ describe('searchAllAccounts all-stalled lifecycle', () => {
     });
 
     const result = await Effect.runPromise(
-      program.pipe(Effect.provide(TestContext.TestContext)),
+      program.pipe(Effect.provide(TestClock.layer())),
     );
     expect(result).toMatchObject({ _tag: 'SearchAccountsError' });
     expect(result.message).toContain('first@example.com');

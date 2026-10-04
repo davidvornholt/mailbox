@@ -1,4 +1,4 @@
-import { Duration, Effect, Either, Schema } from 'effect';
+import { Context, Duration, Effect, Layer, Result, Schema } from 'effect';
 import { OAuthError } from '../errors/errors';
 
 // Microsoft issues tokens only to registered apps. mailbox borrows Mozilla
@@ -30,33 +30,34 @@ export type PostForm = (
 ) => Promise<Response>;
 
 const DeviceCodeResponse = Schema.Struct({
-  deviceCode: Schema.propertySignature(Schema.String).pipe(
-    Schema.fromKey('device_code'),
+  deviceCode: Schema.String,
+  userCode: Schema.String,
+  verificationUri: Schema.String,
+  intervalSeconds: Schema.Number.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(defaultIntervalSeconds)),
   ),
-  userCode: Schema.propertySignature(Schema.String).pipe(
-    Schema.fromKey('user_code'),
-  ),
-  verificationUri: Schema.propertySignature(Schema.String).pipe(
-    Schema.fromKey('verification_uri'),
-  ),
-  intervalSeconds: Schema.optionalWith(Schema.Number, {
-    default: () => defaultIntervalSeconds,
-  }).pipe(Schema.fromKey('interval')),
-  expiresInSeconds: Schema.propertySignature(Schema.Number).pipe(
-    Schema.fromKey('expires_in'),
-  ),
-});
+  expiresInSeconds: Schema.Number,
+}).pipe(
+  Schema.encodeKeys({
+    deviceCode: 'device_code',
+    userCode: 'user_code',
+    verificationUri: 'verification_uri',
+    intervalSeconds: 'interval',
+    expiresInSeconds: 'expires_in',
+  }),
+);
 
 export type DeviceCode = typeof DeviceCodeResponse.Type;
 
 const TokenResponse = Schema.Struct({
-  accessToken: Schema.propertySignature(Schema.String).pipe(
-    Schema.fromKey('access_token'),
-  ),
-  refreshToken: Schema.optional(Schema.String).pipe(
-    Schema.fromKey('refresh_token'),
-  ),
-});
+  accessToken: Schema.String,
+  refreshToken: Schema.optional(Schema.String),
+}).pipe(
+  Schema.encodeKeys({
+    accessToken: 'access_token',
+    refreshToken: 'refresh_token',
+  }),
+);
 
 export type MicrosoftTokens = {
   readonly accessToken: string;
@@ -65,20 +66,18 @@ export type MicrosoftTokens = {
 
 const ErrorResponse = Schema.Struct({
   error: Schema.String,
-  description: Schema.optional(Schema.String).pipe(
-    Schema.fromKey('error_description'),
-  ),
-});
+  description: Schema.optional(Schema.String),
+}).pipe(Schema.encodeKeys({ description: 'error_description' }));
 
 type OAuthFailure = { readonly error: string; readonly description: string };
 
 // Resolves to the decoded body, or to the OAuth error Microsoft answered with.
-const post = <A, I>(
+const post = <A>(
   postForm: PostForm,
   path: string,
   form: URLSearchParams,
-  success: Schema.Schema<A, I>,
-): Effect.Effect<Either.Either<A, OAuthFailure>, OAuthError> =>
+  success: Schema.Decoder<A>,
+): Effect.Effect<Result.Result<A, OAuthFailure>, OAuthError> =>
   Effect.tryPromise({
     try: async (signal) => {
       const response = await postForm(`${endpoint}/${path}`, form, signal);
@@ -90,22 +89,24 @@ const post = <A, I>(
         message: `Microsoft sign-in request failed: ${String(cause)}`,
       }),
   }).pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: Duration.seconds(requestTimeoutSeconds),
-      onTimeout: () =>
-        new OAuthError({
-          message: `Microsoft sign-in did not respond within ${requestTimeoutSeconds} seconds.`,
-        }),
+      orElse: () =>
+        Effect.fail(
+          new OAuthError({
+            message: `Microsoft sign-in did not respond within ${requestTimeoutSeconds} seconds.`,
+          }),
+        ),
     }),
     Effect.flatMap(
       ({
         ok,
         status,
         body,
-      }): Effect.Effect<Either.Either<A, OAuthFailure>, OAuthError> =>
+      }): Effect.Effect<Result.Result<A, OAuthFailure>, OAuthError> =>
         ok
-          ? Schema.decodeUnknown(success)(body).pipe(
-              Effect.map(Either.right),
+          ? Schema.decodeUnknownEffect(success)(body).pipe(
+              Effect.map(Result.succeed),
               Effect.mapError(
                 () =>
                   new OAuthError({
@@ -113,9 +114,9 @@ const post = <A, I>(
                   }),
               ),
             )
-          : Schema.decodeUnknown(ErrorResponse)(body).pipe(
+          : Schema.decodeUnknownEffect(ErrorResponse)(body).pipe(
               Effect.map(({ error, description }) =>
-                Either.left({
+                Result.fail({
                   error,
                   description:
                     description?.replace(traceSuffix, '').trim() || error,
@@ -144,14 +145,14 @@ const requestDeviceCode = (
     DeviceCodeResponse,
   ).pipe(
     Effect.flatMap(
-      Either.match({
-        onLeft: (failure) =>
+      Result.match({
+        onFailure: (failure) =>
           Effect.fail(
             new OAuthError({
               message: `Microsoft sign-in could not start: ${failure.description}`,
             }),
           ),
-        onRight: Effect.succeed,
+        onSuccess: Effect.succeed,
       }),
     ),
   );
@@ -175,8 +176,8 @@ const pollForTokens = (
       ),
     ),
     Effect.flatMap(
-      Either.match({
-        onLeft: (failure) => {
+      Result.match({
+        onFailure: (failure) => {
           switch (failure.error) {
             case 'authorization_pending':
               return pollForTokens(postForm, device, intervalSeconds);
@@ -194,7 +195,7 @@ const pollForTokens = (
               );
           }
         },
-        onRight: ({ accessToken, refreshToken }) =>
+        onSuccess: ({ accessToken, refreshToken }) =>
           refreshToken === undefined
             ? Effect.fail(
                 new OAuthError({
@@ -212,13 +213,15 @@ const awaitSignIn = (
   device: DeviceCode,
 ): Effect.Effect<MicrosoftTokens, OAuthError> =>
   pollForTokens(postForm, device, device.intervalSeconds).pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: Duration.seconds(device.expiresInSeconds),
-      onTimeout: () =>
-        new OAuthError({
-          message:
-            'The sign-in code expired before sign-in finished. Run mailbox login again.',
-        }),
+      orElse: () =>
+        Effect.fail(
+          new OAuthError({
+            message:
+              'The sign-in code expired before sign-in finished. Run mailbox login again.',
+          }),
+        ),
     }),
   );
 
@@ -241,8 +244,8 @@ const refresh = (
     TokenResponse,
   ).pipe(
     Effect.flatMap(
-      Either.match({
-        onLeft: (failure) =>
+      Result.match({
+        onFailure: (failure) =>
           Effect.fail(
             new OAuthError({
               message:
@@ -251,7 +254,7 @@ const refresh = (
                   : `Microsoft token refresh for ${account} failed: ${failure.description}`,
             }),
           ),
-        onRight: (tokens) =>
+        onSuccess: (tokens) =>
           Effect.succeed({
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken ?? refreshToken,
@@ -273,7 +276,12 @@ export const makeMicrosoftAuth = (postForm: PostForm) =>
 const postWithFetch: PostForm = (url, form, signal) =>
   fetch(url, { method: 'POST', body: form, signal });
 
-export class MicrosoftAuth extends Effect.Service<MicrosoftAuth>()(
-  'mail/MicrosoftAuth',
-  { succeed: makeMicrosoftAuth(postWithFetch) },
-) {}
+export class MicrosoftAuth extends Context.Service<
+  MicrosoftAuth,
+  ReturnType<typeof makeMicrosoftAuth>
+>()('mail/MicrosoftAuth') {
+  static readonly layer = Layer.succeed(
+    MicrosoftAuth,
+    MicrosoftAuth.of(makeMicrosoftAuth(postWithFetch)),
+  );
+}

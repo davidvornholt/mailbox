@@ -51,17 +51,17 @@ const runLogin = async (
       Effect.sync(() => {
         verified.push(login);
       }),
-  } as unknown as Imap;
+  } as unknown as typeof Imap.Service;
   const secrets = {
     setCredential: (_email: string, credential: string) =>
       Effect.sync(() => {
         stored.push(credential);
       }),
-  } as unknown as Secrets;
+  } as unknown as typeof Secrets.Service;
   const microsoft = {
     requestDeviceCode: Effect.succeed(device),
     awaitSignIn: () => options.signIn ?? Effect.never,
-  } as unknown as MicrosoftAuth;
+  } as unknown as typeof MicrosoftAuth.Service;
 
   const succeeded = await Effect.runPromise(
     loginAccounts(accounts, prompt).pipe(

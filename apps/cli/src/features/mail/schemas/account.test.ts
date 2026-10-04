@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Either } from 'effect';
+import { Result } from 'effect';
 import { decodeAccounts, findAccount } from './account';
 
 const minimalAccount = {
@@ -9,12 +9,12 @@ const minimalAccount = {
 };
 
 const decoded = (input: unknown) =>
-  Either.getOrThrowWith(decodeAccounts(input), (error) => new Error(error));
+  Result.getOrThrowWith(decodeAccounts(input), (error) => new Error(error));
 
 const rejection = (input: unknown): string =>
-  Either.match(decodeAccounts(input), {
-    onLeft: (error) => error,
-    onRight: () => 'accepted',
+  Result.match(decodeAccounts(input), {
+    onFailure: (error) => error,
+    onSuccess: () => 'accepted',
   });
 
 describe('decodeAccounts', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect, Fiber, TestClock, TestContext } from 'effect';
+import { Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
 import { withClientSearchDeadline } from './imap-client';
 import { ControlledClient, lifecycleHit } from './imap-client.fixture';
 
@@ -18,7 +19,7 @@ describe('deadline client isolation', () => {
     const stalled = new ControlledClient(undefined);
     const replacement = new ControlledClient([lifecycleHit]);
     const program = Effect.gen(function* () {
-      const fiber = yield* Effect.fork(boundedFailure(stalled));
+      const fiber = yield* Effect.forkChild(boundedFailure(stalled));
       yield* TestClock.adjust('29999 millis');
       const beforeDeadline = {
         closeCalls: stalled.closeCalls,
@@ -37,7 +38,7 @@ describe('deadline client isolation', () => {
     });
 
     const result = await Effect.runPromise(
-      program.pipe(Effect.provide(TestContext.TestContext)),
+      program.pipe(Effect.provide(TestClock.layer())),
     );
     expect(result.beforeDeadline).toEqual({
       closeCalls: 0,
@@ -64,7 +65,7 @@ describe('deadline client isolation', () => {
     ];
     const program = Effect.gen(function* () {
       for (const client of clients) {
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           withClientSearchDeadline(
             'stalled@example.com',
             client,
@@ -72,7 +73,7 @@ describe('deadline client isolation', () => {
             Effect.sync(() => client.close()),
           ),
         );
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* Fiber.interrupt(fiber);
       }
     });
@@ -95,10 +96,10 @@ describe('deadline client separation', () => {
     const first = new ControlledClient(undefined);
     const second = new ControlledClient(undefined);
     const program = Effect.gen(function* () {
-      const warmFiber = yield* Effect.fork(warm.search());
-      const firstFiber = yield* Effect.fork(boundedFailure(first));
+      const warmFiber = yield* Effect.forkChild(warm.search());
+      const firstFiber = yield* Effect.forkChild(boundedFailure(first));
       yield* TestClock.adjust('10 seconds');
-      const secondFiber = yield* Effect.fork(boundedFailure(second));
+      const secondFiber = yield* Effect.forkChild(boundedFailure(second));
       yield* TestClock.adjust('20 seconds');
       const firstError = yield* Fiber.join(firstFiber);
       const beforeSecondDeadline = {
@@ -120,7 +121,7 @@ describe('deadline client separation', () => {
     });
 
     const result = await Effect.runPromise(
-      program.pipe(Effect.provide(TestContext.TestContext)),
+      program.pipe(Effect.provide(TestClock.layer())),
     );
     expect(result.firstError).toMatchObject({
       _tag: 'AccountSearchTimeoutError',

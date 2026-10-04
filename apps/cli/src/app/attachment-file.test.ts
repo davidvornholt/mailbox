@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { Effect, Either } from 'effect';
+import { Effect, Result } from 'effect';
 import type { AttachmentContent } from '../features/mail/schemas/mail';
 import { checkOut, safeFilename, writeAttachment } from './attachment-file';
 
@@ -16,7 +16,7 @@ const attachment = (filename: string | null): AttachmentContent => ({
 });
 
 const write = (file: AttachmentContent, out: string, force = false) =>
-  Effect.runPromise(Effect.either(writeAttachment(file, out, force)));
+  Effect.runPromise(Effect.result(writeAttachment(file, out, force)));
 
 afterAll(async () => {
   await Bun.$`rm -rf ${tempDir}`;
@@ -41,7 +41,7 @@ describe('writeAttachment', () => {
   it('writes into an existing directory under a safe filename', async () => {
     await Bun.$`mkdir -p ${tempDir}/into`;
     const result = await write(attachment('../notes.txt'), `${tempDir}/into/`);
-    expect(result).toEqual(Either.right(`${tempDir}/into/notes.txt`));
+    expect(result).toEqual(Result.succeed(`${tempDir}/into/notes.txt`));
     expect(await Bun.file(`${tempDir}/into/notes.txt`).text()).toBe('content');
   });
 
@@ -50,12 +50,15 @@ describe('writeAttachment', () => {
     await Bun.write(path, 'original');
     const refused = await write(attachment('a.txt'), path);
     expect(refused).toMatchObject({
-      _tag: 'Left',
-      left: { _tag: 'UsageError', message: expect.stringContaining('--force') },
+      _tag: 'Failure',
+      failure: {
+        _tag: 'UsageError',
+        message: expect.stringContaining('--force'),
+      },
     });
     expect(await Bun.file(path).text()).toBe('original');
     const forced = await write(attachment('a.txt'), path, true);
-    expect(forced).toEqual(Either.right(path));
+    expect(forced).toEqual(Result.succeed(path));
     expect(await Bun.file(path).text()).toBe('content');
   });
 
@@ -63,18 +66,18 @@ describe('writeAttachment', () => {
     const path = `${tempDir}/checked.txt`;
     await Bun.write(path, 'original');
     const check = (out: string, force: boolean) =>
-      Effect.runPromise(Effect.either(checkOut(out, force)));
-    expect(await check(path, false)).toMatchObject({ _tag: 'Left' });
-    expect(await check(path, true)).toEqual(Either.right(undefined));
-    expect(await check(tempDir, false)).toEqual(Either.right(undefined));
+      Effect.runPromise(Effect.result(checkOut(out, force)));
+    expect(await check(path, false)).toMatchObject({ _tag: 'Failure' });
+    expect(await check(path, true)).toEqual(Result.succeed(undefined));
+    expect(await check(tempDir, false)).toEqual(Result.succeed(undefined));
   });
 
   it('refuses to replace a directory named like the attachment', async () => {
     await Bun.$`mkdir -p ${tempDir}/nested/b.txt`;
     const result = await write(attachment('b.txt'), `${tempDir}/nested`, true);
     expect(result).toMatchObject({
-      _tag: 'Left',
-      left: { _tag: 'UsageError' },
+      _tag: 'Failure',
+      failure: { _tag: 'UsageError' },
     });
   });
 });

@@ -1,84 +1,103 @@
-import { Data } from 'effect';
+import { Schema } from 'effect';
 
-export class ConfigError extends Data.TaggedError('ConfigError')<{
-  readonly message: string;
-}> {}
+export class ConfigError extends Schema.TaggedError<ConfigError>()(
+  'ConfigError',
+  {
+    message: Schema.String,
+  },
+) {}
 
-export class UnknownAccountError extends Data.TaggedError(
+export class UnknownAccountError extends Schema.TaggedError<UnknownAccountError>()(
   'UnknownAccountError',
-)<{
-  readonly email: string;
-  readonly message: string;
-}> {}
+  {
+    email: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
-export class MissingCredentialsError extends Data.TaggedError(
+export class MissingCredentialsError extends Schema.TaggedError<MissingCredentialsError>()(
   'MissingCredentialsError',
-)<{
-  readonly account: string;
-  readonly message: string;
-}> {}
+  {
+    account: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
-export class KeyringError extends Data.TaggedError('KeyringError')<{
-  readonly message: string;
-}> {}
+export class KeyringError extends Schema.TaggedError<KeyringError>()(
+  'KeyringError',
+  {
+    message: Schema.String,
+  },
+) {}
 
-export class ImapError extends Data.TaggedError('ImapError')<{
-  readonly message: string;
-}> {}
+export class ImapError extends Schema.TaggedError<ImapError>()('ImapError', {
+  message: Schema.String,
+}) {}
 
-export class OAuthError extends Data.TaggedError('OAuthError')<{
-  readonly message: string;
-}> {}
+export class OAuthError extends Schema.TaggedError<OAuthError>()('OAuthError', {
+  message: Schema.String,
+}) {}
 
-export class SearchInputError extends Data.TaggedError('SearchInputError')<{
-  readonly message: string;
-}> {}
+export class SearchInputError extends Schema.TaggedError<SearchInputError>()(
+  'SearchInputError',
+  {
+    message: Schema.String,
+  },
+) {}
 
-export class SearchAccountsError extends Data.TaggedError(
+export class SearchAccountsError extends Schema.TaggedError<SearchAccountsError>()(
   'SearchAccountsError',
-)<{
-  readonly message: string;
-}> {}
+  {
+    message: Schema.String,
+  },
+) {}
 
-export class AccountSearchTimeoutError extends Data.TaggedError(
+export class AccountSearchTimeoutError extends Schema.TaggedError<AccountSearchTimeoutError>()(
   'AccountSearchTimeoutError',
-)<{
-  readonly account: string;
-  readonly message: string;
-}> {}
+  {
+    account: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
-export class FolderNotFoundError extends Data.TaggedError(
+export class FolderNotFoundError extends Schema.TaggedError<FolderNotFoundError>()(
   'FolderNotFoundError',
-)<{
-  readonly folder: string;
-  readonly message: string;
-}> {}
+  {
+    folder: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
-export class MessageNotFoundError extends Data.TaggedError(
+export class MessageNotFoundError extends Schema.TaggedError<MessageNotFoundError>()(
   'MessageNotFoundError',
-)<{
-  readonly folder: string;
-  readonly uid: number;
-  readonly message: string;
-}> {}
+  {
+    folder: Schema.String,
+    uid: Schema.Number,
+    message: Schema.String,
+  },
+) {}
 
-export class AttachmentNotFoundError extends Data.TaggedError(
+export class AttachmentNotFoundError extends Schema.TaggedError<AttachmentNotFoundError>()(
   'AttachmentNotFoundError',
-)<{
-  readonly folder: string;
-  readonly uid: number;
-  readonly part: string;
-  readonly message: string;
-}> {}
+  {
+    folder: Schema.String,
+    uid: Schema.Number,
+    part: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
-export class DraftError extends Data.TaggedError('DraftError')<{
-  readonly message: string;
-}> {}
+export class DraftError extends Schema.TaggedError<DraftError>()('DraftError', {
+  message: Schema.String,
+}) {}
 
-export class StaleUidError extends Data.TaggedError('StaleUidError')<{
-  readonly folder: string;
-  readonly message: string;
-}> {}
+export class StaleUidError extends Schema.TaggedError<StaleUidError>()(
+  'StaleUidError',
+  {
+    folder: Schema.String,
+    message: Schema.String,
+  },
+) {}
 
 export type MailError =
   | ConfigError

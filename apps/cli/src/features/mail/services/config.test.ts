@@ -26,17 +26,17 @@ afterAll(async () => {
 });
 
 const loadWith = <A, E>(effect: Effect.Effect<A, E, MailConfig>) =>
-  Effect.runPromise(Effect.either(Effect.provide(effect, MailConfig.Default)));
+  Effect.runPromise(Effect.result(Effect.provide(effect, MailConfig.layer)));
 
 const getAccount = (email: string) =>
   MailConfig.pipe(Effect.flatMap((config) => config.getAccount(email)));
 
 const failureMessage = async () => {
   const result = await loadWith(MailConfig);
-  if (result._tag === 'Right') {
+  if (result._tag === 'Success') {
     throw new Error('expected the config to fail');
   }
-  return result.left.message;
+  return result.failure.message;
 };
 
 describe('MailConfig', () => {
@@ -44,8 +44,8 @@ describe('MailConfig', () => {
     Bun.env.MAILBOX_CONFIG = fixturePath;
     const result = await loadWith(getAccount('TEST@example.com'));
     expect(result).toMatchObject({
-      _tag: 'Right',
-      right: { email: 'test@example.com', host: 'imap.test.example' },
+      _tag: 'Success',
+      success: { email: 'test@example.com', host: 'imap.test.example' },
     });
   });
 

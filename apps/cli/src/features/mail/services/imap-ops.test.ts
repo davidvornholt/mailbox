@@ -248,11 +248,11 @@ describe('missing IMAP messages', () => {
         fetchOne: () => Promise.resolve(missing),
       } as unknown as ImapFlow;
       const result = await Effect.runPromise(
-        Effect.either(readMessage(client, 'INBOX', messageUid)),
+        Effect.result(readMessage(client, 'INBOX', messageUid)),
       );
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: { _tag: 'MessageNotFoundError' },
+        _tag: 'Failure',
+        failure: { _tag: 'MessageNotFoundError' },
       });
       expect(released).toBe(true);
     },

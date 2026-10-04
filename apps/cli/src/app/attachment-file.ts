@@ -22,7 +22,7 @@ export const safeFilename = (filename: string | null, part: string): string => {
   return base === undefined || base === '' ? `attachment-${part}` : base;
 };
 
-type PathStats = Effect.Effect.Success<ReturnType<typeof statPath>>;
+type PathStats = Effect.Success<ReturnType<typeof statPath>>;
 
 const refuseExisting = (
   path: string,

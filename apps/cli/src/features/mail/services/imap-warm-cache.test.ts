@@ -40,9 +40,9 @@ describe('makeWarmClientCache', () => {
       const opens = yield* Ref.make(0);
       const gate = yield* Deferred.make<void>();
       const cache = yield* makeWarmClientCache(countingGatedOpen(opens, gate));
-      const first = yield* Effect.fork(cache.clientFor('a@example.com'));
-      const second = yield* Effect.fork(cache.clientFor('a@example.com'));
-      yield* Effect.yieldNow();
+      const first = yield* Effect.forkChild(cache.clientFor('a@example.com'));
+      const second = yield* Effect.forkChild(cache.clientFor('a@example.com'));
+      yield* Effect.yieldNow;
       yield* Deferred.succeed(gate, undefined);
       const firstClient = yield* Fiber.join(first);
       const secondClient = yield* Fiber.join(second);
@@ -63,8 +63,8 @@ describe('makeWarmClientCache', () => {
       const cache = yield* makeWarmClientCache(
         openGatedFor('a@example.com', gateA),
       );
-      const fiberA = yield* Effect.fork(cache.clientFor('a@example.com'));
-      yield* Effect.yieldNow();
+      const fiberA = yield* Effect.forkChild(cache.clientFor('a@example.com'));
+      yield* Effect.yieldNow;
       // Completes while account a's open still holds its own permit; a shared
       // lock would deadlock here.
       const clientB = yield* cache.clientFor('b@example.com');

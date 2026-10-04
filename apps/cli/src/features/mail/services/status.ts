@@ -43,9 +43,10 @@ const verifyOne = (
   Effect.gen(function* () {
     const imap = yield* Imap;
     return yield* imap.verify(email).pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: verifyTimeout,
-        onTimeout: () => new ImapError({ message: 'connection timed out' }),
+        orElse: () =>
+          Effect.fail(new ImapError({ message: 'connection timed out' })),
       }),
       Effect.match({
         onSuccess: () =>

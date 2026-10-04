@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect, Fiber, TestClock, TestContext } from 'effect';
+import { Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
 import { searchWithDedicatedClient } from './imap';
 import { ControlledClient, lifecycleHit } from './imap-client.fixture';
 
@@ -8,8 +9,8 @@ describe('searchWithDedicatedClient', () => {
     const warm = new ControlledClient(undefined);
     const created: Array<ControlledClient> = [];
     const program = Effect.gen(function* () {
-      const warmFiber = yield* Effect.fork(warm.search());
-      const boundedFiber = yield* Effect.fork(
+      const warmFiber = yield* Effect.forkChild(warm.search());
+      const boundedFiber = yield* Effect.forkChild(
         Effect.flip(
           searchWithDedicatedClient(
             'stalled@example.com',
@@ -36,7 +37,7 @@ describe('searchWithDedicatedClient', () => {
     });
 
     const result = await Effect.runPromise(
-      program.pipe(Effect.provide(TestContext.TestContext)),
+      program.pipe(Effect.provide(TestClock.layer())),
     );
     const [bounded] = created;
     expect(bounded).not.toBe(warm);
@@ -60,7 +61,7 @@ describe('searchWithDedicatedClient', () => {
     const client = new ControlledClient(undefined);
     let searchCalls = 0;
     const program = Effect.gen(function* () {
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         Effect.flip(
           searchWithDedicatedClient(
             'stalled@example.com',
@@ -84,7 +85,7 @@ describe('searchWithDedicatedClient', () => {
     });
 
     const result = await Effect.runPromise(
-      program.pipe(Effect.provide(TestContext.TestContext)),
+      program.pipe(Effect.provide(TestClock.layer())),
     );
     expect(result.beforeDeadline).toEqual({
       closeCalls: 0,

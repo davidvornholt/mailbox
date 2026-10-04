@@ -1,4 +1,4 @@
-import { Data, Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import type { MailError } from '../features/mail/errors/errors';
 import { MailConfig } from '../features/mail/services/config';
 import type { Imap } from '../features/mail/services/imap';
@@ -6,9 +6,9 @@ import type { MicrosoftAuth } from '../features/mail/services/microsoft-auth';
 import type { Secrets } from '../features/mail/services/secrets';
 import type { UsageError } from '../shared/command-line';
 
-export class FileError extends Data.TaggedError('FileError')<{
-  readonly message: string;
-}> {}
+export class FileError extends Schema.TaggedError<FileError>()('FileError', {
+  message: Schema.String,
+}) {}
 
 // A command either returns JSON for stdout or has already written its own
 // output. `failed` exits 1 without an error, as when an account is not ready.

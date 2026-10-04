@@ -1,4 +1,4 @@
-import { Either, ParseResult, Schema } from 'effect';
+import { Effect, Result, Schema, SchemaIssue } from 'effect';
 
 // Keyring service namespace for stored credentials: IMAP passwords, or refresh
 // tokens for Microsoft accounts. They live in the OS keyring (see
@@ -7,31 +7,39 @@ export const keyringService = 'mailbox';
 
 // How an account logs in to IMAP: with a password, or with a Microsoft sign-in
 // for Outlook.com and Microsoft 365, which no longer accept passwords.
-const AccountAuth = Schema.Literal('password', 'microsoft');
+const AccountAuth = Schema.Literals(['password', 'microsoft']);
 export type AccountAuth = typeof AccountAuth.Type;
 
 const implicitTlsPort = 993;
 const maxPort = 65_535;
 
+const NonEmptyTrimmedString = Schema.NonEmptyString.check(Schema.isTrimmed());
+
 const AccountEntry = Schema.Struct({
-  email: Schema.NonEmptyTrimmedString,
-  name: Schema.NonEmptyTrimmedString,
-  host: Schema.NonEmptyTrimmedString,
-  port: Schema.optionalWith(Schema.Int.pipe(Schema.between(1, maxPort)), {
-    default: () => implicitTlsPort,
-  }),
-  secure: Schema.optionalWith(Schema.Boolean, { default: () => true }),
-  user: Schema.optional(Schema.NonEmptyTrimmedString),
-  auth: Schema.optionalWith(AccountAuth, { default: () => 'password' }),
+  email: NonEmptyTrimmedString,
+  name: NonEmptyTrimmedString,
+  host: NonEmptyTrimmedString,
+  port: Schema.Int.check(
+    Schema.isBetween({ minimum: 1, maximum: maxPort }),
+  ).pipe(Schema.withDecodingDefaultKey(Effect.succeed(implicitTlsPort))),
+  secure: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(true)),
+  ),
+  user: Schema.optionalKey(NonEmptyTrimmedString),
+  auth: AccountAuth.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed('password' as const)),
+  ),
 });
+
+const formatIssue = SchemaIssue.makeFormatterDefault();
 
 const sameEmail = (left: string, right: string): boolean =>
   left.toLowerCase() === right.toLowerCase();
 
 // Emails must be unique because accounts are resolved by email.
 const AccountsFile = Schema.Struct({
-  accounts: Schema.NonEmptyArray(AccountEntry).pipe(
-    Schema.filter(
+  accounts: Schema.NonEmptyArray(AccountEntry).check(
+    Schema.makeFilter(
       (accounts) =>
         accounts.every(
           (account, index) =>
@@ -63,16 +71,16 @@ export const findAccount = (
 // silently falling back to a default.
 export const decodeAccounts = (
   input: unknown,
-): Either.Either<ReadonlyArray<Account>, string> =>
-  Schema.decodeUnknownEither(AccountsFile, {
+): Result.Result<ReadonlyArray<Account>, string> =>
+  Schema.decodeUnknownResult(AccountsFile)(input, {
     errors: 'all',
     onExcessProperty: 'error',
-  })(input).pipe(
-    Either.map(({ accounts }) =>
+  }).pipe(
+    Result.map(({ accounts }) =>
       accounts.map((account) => ({
         ...account,
         user: account.user ?? account.email,
       })),
     ),
-    Either.mapLeft((error) => ParseResult.TreeFormatter.formatErrorSync(error)),
+    Result.mapError((error) => formatIssue(error.issue)),
   );
