@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "agentGuidance": false,
   "globalDependencies": ["biome.jsonc", "biome.base.jsonc"],
   "globalPassThroughEnv": ["MAILBOX_CONFIG", "TMPDIR", "XDG_CONFIG_HOME"],
   "tasks": {
