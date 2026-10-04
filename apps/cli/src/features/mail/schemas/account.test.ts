@@ -30,18 +30,17 @@ describe('decodeAccounts', () => {
     ]);
   });
 
-  it('keeps Microsoft sign-in as the auth method', () => {
+  it('keeps an explicit port, security mode, login user, and auth method', () => {
+    const explicit = {
+      port: 143,
+      secure: false,
+      user: 'a',
+      auth: 'microsoft',
+    } as const;
     const [account] = decoded({
-      accounts: [{ ...minimalAccount, auth: 'microsoft' }],
+      accounts: [{ ...minimalAccount, ...explicit }],
     });
-    expect(account?.auth).toBe('microsoft');
-  });
-
-  it('keeps an explicit port, security mode, and login user', () => {
-    const [account] = decoded({
-      accounts: [{ ...minimalAccount, port: 143, secure: false, user: 'a' }],
-    });
-    expect(account).toMatchObject({ port: 143, secure: false, user: 'a' });
+    expect(account).toMatchObject(explicit);
   });
 
   it('rejects an empty accounts list', () => {

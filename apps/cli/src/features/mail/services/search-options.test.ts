@@ -14,32 +14,13 @@ describe('resolveSearchOptions', () => {
     });
   });
 
-  it('accepts an explicit subtree search', async () => {
+  it.each([
+    ['subtree', 'Projects'],
+    ['folder', 'INBOX'],
+  ] as const)('accepts an explicit %s search', async (scope, folder) => {
     await expect(
-      Effect.runPromise(
-        resolveSearchOptions({
-          ...base,
-          scope: 'subtree',
-          folder: 'Projects',
-        }),
-      ),
-    ).resolves.toEqual({
-      ...base,
-      scope: 'subtree',
-      folder: 'Projects',
-    });
-  });
-
-  it('accepts an explicit exact-folder search', async () => {
-    await expect(
-      Effect.runPromise(
-        resolveSearchOptions({ ...base, scope: 'folder', folder: 'INBOX' }),
-      ),
-    ).resolves.toEqual({
-      ...base,
-      scope: 'folder',
-      folder: 'INBOX',
-    });
+      Effect.runPromise(resolveSearchOptions({ ...base, scope, folder })),
+    ).resolves.toEqual({ ...base, scope, folder });
   });
 
   it('accepts a calendar since date', async () => {
@@ -58,25 +39,16 @@ describe('resolveSearchOptions', () => {
     },
   );
 
-  it('rejects a folder combined with all-mail scope', async () => {
+  it.each([
+    [
+      'a folder combined with all-mail scope',
+      { scope: 'all', folder: 'INBOX' },
+    ],
+    ['a folder without an explicit folder-based scope', { folder: 'INBOX' }],
+    ['a folder-based scope without a folder', { scope: 'subtree' }],
+  ] as const)('rejects %s', async (_case, input) => {
     const error = await Effect.runPromise(
-      Effect.flip(
-        resolveSearchOptions({ ...base, scope: 'all', folder: 'INBOX' }),
-      ),
-    );
-    expect(error._tag).toBe('SearchInputError');
-  });
-
-  it('rejects a folder without an explicit folder-based scope', async () => {
-    const error = await Effect.runPromise(
-      Effect.flip(resolveSearchOptions({ ...base, folder: 'INBOX' })),
-    );
-    expect(error._tag).toBe('SearchInputError');
-  });
-
-  it('rejects a folder-based scope without a folder', async () => {
-    const error = await Effect.runPromise(
-      Effect.flip(resolveSearchOptions({ ...base, scope: 'subtree' })),
+      Effect.flip(resolveSearchOptions({ ...base, ...input })),
     );
     expect(error._tag).toBe('SearchInputError');
   });

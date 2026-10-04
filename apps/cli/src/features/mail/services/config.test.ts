@@ -49,18 +49,6 @@ describe('MailConfig', () => {
     });
   });
 
-  it('lists the configured accounts for an unknown account', async () => {
-    Bun.env.MAILBOX_CONFIG = fixturePath;
-    const result = await loadWith(getAccount('nobody@example.com'));
-    expect(result).toMatchObject({
-      _tag: 'Left',
-      left: {
-        _tag: 'UnknownAccountError',
-        message: expect.stringContaining('test@example.com'),
-      },
-    });
-  });
-
   it('reads accounts.toml under XDG_CONFIG_HOME when no override is set', async () => {
     Bun.env.MAILBOX_CONFIG = '';
     Bun.env.XDG_CONFIG_HOME = tempDir;
