@@ -37,3 +37,7 @@ Run `mailbox --help` for the commands and `mailbox <command> --help` for their o
 ## Develop
 
 `bun run check` runs the standards drift check, lint, type checks, tests, and the build. It must pass before a change is done. Run the command from source with `bun apps/cli/src/app/cli.ts`.
+
+## License
+
+[MIT](LICENSE) © David Vornholt
