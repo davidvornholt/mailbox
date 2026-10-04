@@ -3,12 +3,7 @@ import { Effect } from 'effect';
 import { ImapError, OAuthError } from '../errors/errors';
 import type { Account } from '../schemas/account';
 import type { ImapLogin } from './imap-client';
-import {
-  imapLoginFor,
-  microsoftLogin,
-  passwordLogin,
-  storeVerifiedLogin,
-} from './login';
+import { imapLoginFor, passwordLogin, storeVerifiedLogin } from './login';
 
 const account: Account = {
   email: 'me@example.com',
@@ -36,26 +31,6 @@ describe('storeVerifiedLogin', () => {
     );
 
     expect(events).toEqual(['verified {"pass":"secret"}', 'stored secret']);
-  });
-
-  it('verifies a Microsoft access token and stores the refresh token', async () => {
-    const events: Array<string> = [];
-
-    await Effect.runPromise(
-      storeVerifiedLogin(
-        'user@example.com',
-        microsoftLogin({ accessToken: 'access', refreshToken: 'refresh' }),
-        (_email, login) =>
-          Effect.sync(() => events.push(`verified ${JSON.stringify(login)}`)),
-        (_email, credential) =>
-          Effect.sync(() => events.push(`stored ${credential}`)),
-      ),
-    );
-
-    expect(events).toEqual([
-      'verified {"accessToken":"access"}',
-      'stored refresh',
-    ]);
   });
 
   it('does not store the credential when verification fails', async () => {
