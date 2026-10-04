@@ -32,7 +32,7 @@ const composeFlags = {
   subject: flag.optionalText('text', 'Subject line'),
   htmlFile: flag.optionalText(
     'path',
-    'HTML body to send alongside the text (default: generated from the text)',
+    'HTML body to send alongside the text (default: generated from the text, with its http and https URLs linked)',
   ),
   attach: flag.texts('path', 'File to attach; repeat for more files'),
   replyFolder: flag.optionalText('path', 'Folder of the message to reply to'),
