@@ -3,7 +3,7 @@
 # secrets/*.yaml. This file is seeded once and never synced.
 keys:
   - &david-workstation age1gxzu2f027zu227f4wyf4jh5sw0w495482qfzv5flmfyjvgzxm3ys8p9muz
-  - &github_actions_ci age18dyr2z0nufldrexs62ch8dezj5ededy9hj4mf8qfrg3xlylxk4aqtf67g3
+  - &github_actions_ci age13rklw6tk85lsyzfpayljhmxaery6kcx3k3l368eh0dyfuaaqc3yqgv0q6g
 creation_rules:
   - path_regex: secrets/dev\.yaml$
     key_groups:
