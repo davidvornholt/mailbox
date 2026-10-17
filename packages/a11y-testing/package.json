@@ -5,11 +5,13 @@
   "type": "module",
   "exports": {
     "./axe": "./src/axe.ts",
+    "./network-isolation": "./src/network-isolation.ts",
     "./playwright-config": "./src/playwright-config.ts"
   },
+  "bin": {
+    "a11y-playwright": "./src/a11y-playwright.ts"
+  },
   "scripts": {
-    "lint": "biome check --error-on-warnings .",
-    "lint:fix": "biome check --write --error-on-warnings .",
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },

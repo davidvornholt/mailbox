@@ -12,10 +12,10 @@
       "dependsOn": ["build", "^build"],
       "outputs": []
     },
-    "lint": {
+    "//#lint": {
       "outputs": []
     },
-    "lint:fix": {
+    "//#lint:fix": {
       "cache": false,
       "outputs": []
     },

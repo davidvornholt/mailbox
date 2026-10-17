@@ -15,14 +15,27 @@ on:
   push:
     branches:
       - main
+  # A dispatched run on main is a full gate that nothing waits for. The reuse
+  # job requests one when a reused push leaves the trusted cache snapshots
+  # missing or stale, so cache publication never delays the gate a release
+  # waits for. Release pollers select `push` runs, so dispatched runs never
+  # stand in for a push gate.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
   # Preserve every push SHA needed by publication; only PR runs supersede one
-  # another when a newer commit updates the same PR.
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  # another when a newer commit updates the same PR. Dispatched runs share one
+  # group, so at most one runs and the newest request waits behind it.
+  # Draft and ready runs of a PR use separate groups. When a push to a draft is
+  # followed at once by ready for review, GitHub can start the push's run
+  # second; in a shared group that draft run, which runs no gate, cancels the
+  # ready run and leaves the head without its required check. With separate
+  # groups, a ready run keeps running after its PR returns to draft, until the
+  # next ready run replaces it.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.ref, github.event.pull_request.draft && 'draft' || 'ready') || github.event_name == 'workflow_dispatch' && 'dispatch' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -35,16 +48,16 @@ jobs:
   # reuse trusts same-repository authors as far as the pull-request run itself
   # already does; fork runs never qualify. It runs no repository code. Any miss
   # leaves `proven` unset and any error fails only this step, so the full gate
-  # runs. Reuse also skips cache publication, so it additionally requires
-  # trusted Bun and Playwright snapshots for the current lock and a Turbo
-  # snapshot younger than a day, which bounds how stale pull-request restores
-  # can become.
+  # runs. Cache freshness never decides reuse; a reused push instead requests
+  # a separate cache publication run when the snapshots are missing or stale.
   reuse:
     if: github.event_name == 'push'
     runs-on: ${{ vars.CI_CODEBUILD_PROJECT != '' && format('codebuild-{0}-{1}-{2}-small', vars.CI_CODEBUILD_PROJECT, github.run_id, github.run_attempt) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
-      actions: read
+      # Write only creates the cache publication dispatch; no step in this job
+      # runs repository code.
+      actions: write
       checks: read
       contents: read
       pull-requests: read
@@ -62,15 +75,9 @@ jobs:
         id: proof
         continue-on-error: true
         env:
-          BUN_CACHE_PREFIX: bun-packages-v2-
           GH_TOKEN: ${{ github.token }}
-          LOCK_HASH: ${{ hashFiles('bun.lock') }}
-          PLAYWRIGHT_CACHE_PREFIX: playwright-v2-
-          REF: ${{ github.ref }}
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ github.sha }}
-          TURBO_CACHE_PREFIX: turbo-trusted-v2-
-          TURBO_SNAPSHOT_MAX_AGE_SECONDS: "86400"
         run: |
           set -euo pipefail
           miss() {
@@ -121,7 +128,40 @@ jobs:
           done
           [ "$validated" = true ] || miss "no successful pull request run of $head recorded tree $tree"
 
-          [ -n "$LOCK_HASH" ] || miss "bun.lock is missing"
+          echo "proven=true" >> "$GITHUB_OUTPUT"
+
+      # A reused push publishes no caches. Bound the staleness that causes
+      # without delaying the gate: when main lacks trusted Bun or Playwright
+      # snapshots for the current lock, or its newest Turbo snapshot is older
+      # than a day, dispatch a full gate run on main, which publishes exactly
+      # as a full push run does. Repositories with no Playwright snapshot have
+      # no browser suite to publish for. A failed request only leaves the
+      # caches stale, so it warns instead of failing the gate.
+      - name: Request stale cache publication
+        if: steps.proof.outputs.proven == 'true'
+        continue-on-error: true
+        env:
+          BUN_CACHE_PREFIX: bun-packages-v2-
+          GH_TOKEN: ${{ github.token }}
+          LOCK_HASH: ${{ hashFiles('bun.lock') }}
+          PLAYWRIGHT_CACHE_PREFIX: playwright-v2-
+          REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+          TURBO_CACHE_PREFIX: turbo-trusted-v2-
+          TURBO_SNAPSHOT_MAX_AGE_SECONDS: "86400"
+        run: |
+          set -euo pipefail
+          publish() {
+            echo "::notice::Requesting cache publication: $1"
+            gh api --method POST "repos/$REPOSITORY/actions/workflows/standards.yml/dispatches" \
+              -f "ref=${REF#refs/heads/}" >/dev/null
+            exit 0
+          }
+
+          if [ -z "$LOCK_HASH" ]; then
+            echo "::warning::Cannot check cache freshness: bun.lock is missing"
+            exit 1
+          fi
           main_caches() {
             gh api --paginate "repos/$REPOSITORY/actions/caches?ref=$REF&key=$1&per_page=100" \
               | jq -r '.actions_caches[] | [.key, .created_at] | @tsv'
@@ -133,17 +173,16 @@ jobs:
             awk -F'\t' -v suffix="-$LOCK_HASH" \
               'substr($1, length($1) - length(suffix) + 1) == suffix { found = 1 } END { exit !found }'
           }
-          current_lock <<<"$bun_caches" || miss "main has no Bun snapshot for the current lock"
+          current_lock <<<"$bun_caches" || publish "main has no Bun snapshot for the current lock"
           if [ -n "$playwright_caches" ] && ! current_lock <<<"$playwright_caches"; then
-            miss "main has no Playwright snapshot for the current lock"
+            publish "main has no Playwright snapshot for the current lock"
           fi
           newest_turbo=$(cut -f2 <<<"$turbo_caches" | sort | tail -n 1)
-          [ -n "$newest_turbo" ] || miss "main has no Turbo snapshot"
+          [ -n "$newest_turbo" ] || publish "main has no Turbo snapshot"
           turbo_age=$(( $(date -u +%s) - $(date -u -d "$newest_turbo" +%s) ))
           [ "$turbo_age" -le "$TURBO_SNAPSHOT_MAX_AGE_SECONDS" ] \
-            || miss "the newest main Turbo snapshot is $turbo_age seconds old"
-
-          echo "proven=true" >> "$GITHUB_OUTPUT"
+            || publish "the newest main Turbo snapshot is $turbo_age seconds old"
+          echo "Trusted cache snapshots are current"
 
   # Canonical quality gate synced from davidvornholt/standards. `bun run check`
   # runs the sync drift-check first, then lint, types, tests, build, and the
@@ -181,7 +220,8 @@ jobs:
   # skipping a pointless download in repos with nothing to render.
   #
   # Draft revisions skip the gate, and a main push skips it only when the reuse
-  # job proved that a pull-request run already validated the exact tree.
+  # job proved that a pull-request run already validated the exact tree. A
+  # dispatched run has no reuse job, so it always runs the full gate.
   # `!cancelled()` keeps the gate running when the reuse job is skipped or fails.
   quality:
     needs: reuse
@@ -203,13 +243,28 @@ jobs:
           POSTGRES_USER: ${{ vars.CI_POSTGRES_USER || 'app' }}
           POSTGRES_PASSWORD: ${{ vars.CI_POSTGRES_PASSWORD || 'app' }}
           POSTGRES_DB: ${{ vars.CI_POSTGRES_DB || 'app' }}
+          # The service holds only disposable test data, so it gives up crash
+          # safety for speed. Every DROP DATABASE forces a checkpoint that
+          # syncs every unwritten file in the cluster, which took 1.4–2.2 s per
+          # drop while other tests created databases, and 22 ms without syncs.
+          # `--no-sync` also skips syncing the new cluster during start-up.
+          POSTGRES_INITDB_ARGS: --no-sync --set fsync=off --set synchronous_commit=off --set full_page_writes=off
         ports:
           - 5432:5432
+        # The runner holds every step until the service reports healthy, and
+        # Docker runs the first probe only after one interval. Postgres is
+        # ready a few seconds after start, so probe every second during the
+        # start period instead of waiting the full 10s interval. The probe uses
+        # TCP because the image's init server accepts socket connections only
+        # and restarts before the real server listens, so a fast socket probe
+        # could pass before any step can connect.
         options: >-
-          --health-cmd "pg_isready -U ${{ vars.CI_POSTGRES_USER || 'app' }} -d ${{ vars.CI_POSTGRES_DB || 'app' }}"
+          --health-cmd "pg_isready -h 127.0.0.1 -U ${{ vars.CI_POSTGRES_USER || 'app' }} -d ${{ vars.CI_POSTGRES_DB || 'app' }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+          --health-start-period 30s
+          --health-start-interval 1s
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -224,6 +279,10 @@ jobs:
       # Workflows are the one file class the rest of the gate never exercises —
       # a broken workflow only fails when its trigger fires, after merge. Lint
       # them first: it is the cheapest step, so certain failures cost nothing.
+      # CodeBuild runners occasionally see a pinned download stall for two
+      # minutes and end in an HTTP error, so every pinned download in this
+      # workflow caps each attempt and retries. The checksum still decides
+      # what runs.
       - name: Lint workflows
         run: |
           set -euo pipefail
@@ -237,10 +296,17 @@ jobs:
               ;;
           esac
           archive="$RUNNER_TEMP/actionlint.tar.gz"
-          curl -sfLo "$archive" "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_${arch}.tar.gz"
+          curl -sSfLo "$archive" --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_${arch}.tar.gz"
           echo "$sha  $archive" | sha256sum --check --quiet
           tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
-          "$RUNNER_TEMP/actionlint" -color
+          # The v3 GitHub App token action accepts client-id, but actionlint
+          # 1.7.12 still lists only the deprecated app-id. The synced
+          # standards-sync.yml passes client-id, and consumers own their
+          # actionlint config, so the canonical gate carries this one ignore.
+          # Remove it once a pinned release knows the input:
+          # https://github.com/rhysd/actionlint/issues/669
+          "$RUNNER_TEMP/actionlint" -color \
+            -ignore '^input "client-id" is not defined in action "actions/create-github-app-token@v3"\. '
 
       # A fixed 127.0.0.1 database URL only works where the job shares the
       # service's published loopback — true on GitHub-hosted runners, false on
@@ -306,6 +372,36 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # actions/cache compresses with zstd only when a zstd binary is on PATH
+      # and otherwise falls back to gzip, which costs CodeBuild quality runs
+      # tens of seconds per cache save and several per restore. The CodeBuild
+      # image has no zstd; GitHub-hosted runners do, so this step runs only on
+      # CodeBuild and must precede Setup Bun, the first Actions cache user.
+      # Ubuntu's zstd package links libzstd statically and needs only base
+      # system libraries, so extracting the pinned release-pocket build skips
+      # apt. The compression method is part of the cache version, so a failed
+      # install fails the job instead of publishing gzip snapshots that zstd
+      # runs cannot restore.
+      - name: Install zstd for the Actions cache
+        if: vars.CI_CODEBUILD_PROJECT != ''
+        run: |
+          set -euo pipefail
+          version=1.5.5+dfsg2-2build1
+          case "$(uname -m)" in
+            x86_64) arch=amd64; archive=https://archive.ubuntu.com/ubuntu; sha=bb14385ff3d6df723a686778dc5f87849f720a0add261b5de9bcd4915a490b2a ;;
+            aarch64) arch=arm64; archive=https://ports.ubuntu.com/ubuntu-ports; sha=e054f8bf2c8b3f1d82a1e87352c1cb6f62887aac22a88b55f7dd715567f74bfd ;;
+            *)
+              echo "::error::No pinned zstd package for runner architecture $(uname -m)"
+              exit 1
+              ;;
+          esac
+          package="$RUNNER_TEMP/zstd.deb"
+          curl -sSfLo "$package" --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 "$archive/pool/main/libz/libzstd/zstd_${version}_${arch}.deb"
+          echo "$sha  $package" | sha256sum --check --quiet
+          dpkg-deb -x "$package" "$RUNNER_TEMP/zstd"
+          "$RUNNER_TEMP/zstd/usr/bin/zstd" --version
+          echo "$RUNNER_TEMP/zstd/usr/bin" >> "$GITHUB_PATH"
+
       - name: Read Bun version
         id: bun
         run: |
@@ -344,9 +440,10 @@ jobs:
       # restore semantics change, so immutable legacy snapshots cannot survive
       # the cutover through an exact key hit or an old restore prefix.
       # PRs may restore the latest default-branch Turbo snapshot but never
-      # publish cache state. A successful default-branch run saves at most one
-      # pruned snapshot per commit, so reruns cannot duplicate an upload and PR
-      # revisions cannot consume repository cache quota.
+      # publish cache state. A successful default-branch push or dispatched
+      # run saves at most one pruned snapshot per commit, so reruns cannot
+      # duplicate an upload and PR revisions cannot consume repository cache
+      # quota.
       - name: Restore the Turbo cache
         id: turbo-cache
         uses: actions/cache/restore@v6
@@ -356,6 +453,22 @@ jobs:
           restore-keys: |
             turbo-trusted-v2-${{ runner.os }}-${{ runner.arch }}-
 
+      # `next build` keeps Turbopack's incremental compiler cache in each app's
+      # .next/cache/turbopack, which Turbo task outputs exclude. PRs restore the
+      # latest default-branch snapshot, so a build that misses the Turbo cache
+      # recompiles only changed modules. Only the compiler cache is shared:
+      # data caches such as fetch results stay per build. Main never restores
+      # it, so every published snapshot comes from a cold build of its own
+      # commit and cannot accumulate entries or state from earlier builds.
+      - name: Restore the Next.js build cache
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@v6
+        with:
+          path: apps/*/.next/cache/turbopack
+          key: next-trusted-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: |
+            next-trusted-v1-${{ runner.os }}-${{ runner.arch }}-
+
       # Bun's package store and Playwright's browser store hold executable
       # content and live at their tool-default paths. The defaults matter
       # beyond convention: Turbo runs tasks in strict env mode, so a task's
@@ -363,10 +476,11 @@ jobs:
       # browser) see no redirected path variables and resolve the defaults —
       # a relocated store is invisible to exactly the processes that need it.
       # Trust comes from publication, not location: pull requests may restore
-      # trusted snapshots but cannot publish; only a successful main run
-      # saves. Quality always uses an ephemeral hosted or per-run CodeBuild
-      # runner; arbitrary persistent CI_RUNNER pools are unsupported so an
-      # earlier PR cannot leave executable state in the next run's defaults.
+      # trusted snapshots but cannot publish; only a successful main push or
+      # dispatched main run saves, and both run main's own code. Quality always
+      # uses an ephemeral hosted or per-run CodeBuild runner; arbitrary
+      # persistent CI_RUNNER pools are unsupported so an earlier PR cannot
+      # leave executable state in the next run's defaults.
       #
       # Published Bun and Playwright snapshots must be history-free. A main
       # snapshot published after a lock change contains only what the current
@@ -435,7 +549,38 @@ jobs:
           # in CI. This workflow-only seam keeps local `bun run check`
           # fail-closed.
           STANDARDS_SKIP_GITHUB_CHECK: "true"
+          # Every `turbo run` writes .turbo/runs/<id>.json with each task's
+          # hash, cache status, and duration, also when a task fails. The
+          # task table below and the Turbo prune read these files. Turbo
+          # excludes this variable from task hashes.
+          TURBO_RUN_SUMMARY: "true"
         run: bun run check
+
+      # Consumers run Turbo with --output-logs=errors-only, so this table is
+      # the only per-task record of where the gate spends its time and what
+      # missed the cache. It also goes to the log, where `gh run view --log`
+      # can read it.
+      - name: Summarize Turbo tasks
+        if: "!cancelled()"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          summaries=(.turbo/runs/*.json)
+          [ "${#summaries[@]}" -gt 0 ] || exit 0
+          jq -rs '
+            [.[].tasks[] | {
+              id: .taskId,
+              cache: .cache.status,
+              seconds: (((.execution.endTime // 0) - (.execution.startTime // 0)) / 1000)
+            }] as $tasks
+            | "### Turbo tasks",
+              "",
+              "\($tasks | map(select(.cache == "HIT")) | length) of \($tasks | length) tasks restored from the Turbo cache.",
+              "",
+              "| Task | Cache | Seconds |",
+              "| --- | --- | ---: |",
+              ($tasks | sort_by(-.seconds)[] | "| `\(.id)` | \(.cache) | \((.seconds * 10 | round) / 10) |")
+          ' "${summaries[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Save the Bun package cache
         if: success() && github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -451,15 +596,61 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
 
-      # Keep the newest artifacts within 2 GiB before the successful
-      # default-branch save. Failed, cancelled, PR, and exact-key rerun jobs do
-      # not prune because none of them publishes a snapshot.
+      # A Next.js app writes its compiler cache only when `next build` ran,
+      # not when Turbo restored the build, so main publishes a snapshot only
+      # after it compiled an app. Repositories without one publish nothing.
+      # Bound the combined apparent size to 512 MiB, including sparse files.
+      # Skip oversized snapshots intact; pruning files can corrupt Turbopack.
+      # A nullglob array replaces `compgen`, which non-interactive bash omits.
+      - name: Detect a Next.js build cache
+        id: next-cache
+        if: success() && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          caches=(apps/*/.next/cache/turbopack)
+          present=false
+          if (( ${#caches[@]} > 0 )); then
+            cache_bytes=$(du --apparent-size --block-size=1 --summarize "${caches[@]}" | awk '{ bytes += $1 } END { printf "%.0f", bytes }')
+            if (( cache_bytes <= 512 * 1024 * 1024 )); then
+              present=true
+            else
+              echo "::notice::Skipping Next.js build cache save: ${cache_bytes} bytes exceeds the 512 MiB snapshot budget."
+            fi
+          fi
+          echo "present=$present" >> "$GITHUB_OUTPUT"
+
+      - name: Save the Next.js build cache
+        if: success() && github.ref == 'refs/heads/main' && steps.next-cache.outputs.present == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: apps/*/.next/cache/turbopack
+          key: next-trusted-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+
+      # Before the successful default-branch save, keep only the artifacts
+      # whose task hashes this run's Turbo summaries list, then cap what is
+      # left at the newest 2 GiB. Pull requests test their merge with the
+      # latest main, so artifacts of older main trees can never hit. A cache
+      # hit does not touch an artifact's mtime, so an mtime-only cap evicts the
+      # longest-hitting artifacts first. Without run summaries only the cap
+      # applies. Failed, cancelled, PR, and exact-key rerun jobs do not prune
+      # because none of them publishes a snapshot.
       - name: Prune the Turbo cache before save
         if: success() && github.ref == 'refs/heads/main' && steps.turbo-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           cache_dir=.turbo/cache
           [ -d "$cache_dir" ] || exit 0
+          shopt -s nullglob
+          summaries=(.turbo/runs/*.json)
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            used=$(jq -r '.tasks[].hash' "${summaries[@]}")
+            find "$cache_dir" -type f -printf '%f\t%p\n' |
+              awk -F'\t' -v used="$used" '
+                BEGIN { split(used, hashes, "\n"); for (i in hashes) keep[hashes[i]] }
+                { hash = $1; sub(/[.-].*/, "", hash); if (!(hash in keep)) print $2 }' |
+              xargs -r rm -f --
+          fi
           find "$cache_dir" -type f -printf '%T@\t%k\t%p\n' |
             sort -rn |
             awk -F'\t' -v budget=$((2 * 1024 * 1024)) \
@@ -517,14 +708,26 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
+      # The action opens /dev/kvm to the build users; declaring the kvm
+      # feature lets the x86_64-linux runner build the app-release VM test.
+      # Arm runners have no KVM, so they declare no extra features.
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: ${{ matrix.system == 'x86_64-linux' && 'system-features = nixos-test benchmark big-parallel kvm' || '' }}
 
       - name: Test Nix system metadata
         run: bash nix/bun-system-metadata.test.sh
 
       - name: Build Nix check
         run: nix build ".#checks.${{ matrix.system }}.standards-cli" -L
+
+      - name: Build app-release check
+        run: nix build ".#checks.${{ matrix.system }}.app-release" -L
+
+      - name: Run app-release VM test
+        if: matrix.system == 'x86_64-linux'
+        run: nix build ".#checks.x86_64-linux.app-release-vm" -L
 
   # Keep the stable required-check name while making all independent gates
   # mandatory. `always()` ensures a failed or cancelled dependency cannot turn
@@ -579,13 +782,14 @@ jobs:
             .github/settings.local.json
           sparse-checkout-cone-mode: false
 
+      # Downloads retry for the reason given at Lint workflows.
       - name: Install pinned settings checker
         run: |
           set -euo pipefail
-          bun_version=1.4.2
+          bun_version=1.4.3
           case "$(uname -m)" in
-            x86_64) bun_arch=x64; bun_sha=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913 ;;
-            aarch64) bun_arch=aarch64; bun_sha=54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7 ;;
+            x86_64) bun_arch=x64; bun_sha=3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18 ;;
+            aarch64) bun_arch=aarch64; bun_sha=efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21 ;;
             *)
               echo "::error::No pinned Bun binary for runner architecture $(uname -m)"
               exit 1
@@ -593,7 +797,7 @@ jobs:
           esac
           bun_archive="$RUNNER_TEMP/bun.zip"
           bun_root="$RUNNER_TEMP/standards-bin"
-          curl -sfLo "$bun_archive" "https://github.com/oven-sh/bun/releases/download/bun-v${bun_version}/bun-linux-${bun_arch}.zip"
+          curl -sSfLo "$bun_archive" --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 "https://github.com/oven-sh/bun/releases/download/bun-v${bun_version}/bun-linux-${bun_arch}.zip"
           echo "$bun_sha  $bun_archive" | sha256sum --check --quiet
           mkdir "$bun_root"
           unzip -q "$bun_archive" -d "$bun_root"
@@ -604,7 +808,7 @@ jobs:
           standards_archive="$RUNNER_TEMP/standards.tgz"
           cli_root="$RUNNER_TEMP/standards-cli"
           mkdir -p "$cli_root/package"
-          curl -sfLo "$standards_archive" "https://registry.npmjs.org/@davidvornholt/standards/-/standards-${standards_version}.tgz"
+          curl -sSfLo "$standards_archive" --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 "https://registry.npmjs.org/@davidvornholt/standards/-/standards-${standards_version}.tgz"
           echo "$standards_sha  $standards_archive" | sha512sum --check --quiet
           tar -xzf "$standards_archive" -C "$cli_root/package" --strip-components=1
 
@@ -612,7 +816,7 @@ jobs:
           yaml_sha=dcdc4df3eefc39dcdb4fb0bf5a31acc9f3c0b4968ddc5343b16c6fed8ee6703b13fe83a6816f01a72410145067bd91378fd63649dcf550b14b7b32fb11bdb217
           yaml_archive="$RUNNER_TEMP/yaml.tgz"
           mkdir -p "$cli_root/node_modules/yaml"
-          curl -sfLo "$yaml_archive" "https://registry.npmjs.org/yaml/-/yaml-${yaml_version}.tgz"
+          curl -sSfLo "$yaml_archive" --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 "https://registry.npmjs.org/yaml/-/yaml-${yaml_version}.tgz"
           echo "$yaml_sha  $yaml_archive" | sha512sum --check --quiet
           tar -xzf "$yaml_archive" -C "$cli_root/node_modules/yaml" --strip-components=1
 
