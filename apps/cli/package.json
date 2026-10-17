@@ -15,7 +15,7 @@
     "html-to-text": "^10.0.1",
     "imapflow": "^2.2.1",
     "mailparser": "^3.9.33",
-    "nodemailer": "^10.0.13"
+    "nodemailer": "^10.1.1"
   },
   "devDependencies": {
     "@davidvornholt/typescript-config": "workspace:*",
