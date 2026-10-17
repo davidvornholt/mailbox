@@ -6,8 +6,6 @@
   "scripts": {
     "build": "bun build --compile src/app/cli.ts --outfile dist/mailbox",
     "check-types": "tsc --noEmit",
-    "lint": "biome check --error-on-warnings .",
-    "lint:fix": "biome check --write --error-on-warnings .",
     "test": "bun test",
     "install:user": "bun run build && bun scripts/install.ts"
   },
