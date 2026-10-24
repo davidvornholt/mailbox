@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "^2.1.0",
-    "effect": "^4.0.0",
+    "effect": "^4.0.4",
     "html-to-text": "^10.0.1",
-    "imapflow": "^2.2.1",
+    "imapflow": "^2.4.2",
     "mailparser": "^3.9.33",
     "nodemailer": "^10.0.13"
   },
