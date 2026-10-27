@@ -12,10 +12,16 @@ export const ns = {
 } as const;
 
 // One <response> of a multistatus reply, with the properties the server
-// returned. Properties from propstats with a non-2xx status are left out.
+// returned. `failed` holds the properties from propstats with a non-2xx
+// status, and `status` the status of a response without propstats.
 export type DavResource = {
   readonly href: string;
+  readonly status: number | undefined;
   readonly props: ReadonlyArray<Element>;
+  readonly failed: ReadonlyArray<{
+    readonly prop: Element;
+    readonly status: number;
+  }>;
 };
 
 const elementNode = 1;
@@ -81,15 +87,27 @@ const toResource = (response: Element): DavResource | undefined => {
   if (href === undefined) {
     return undefined;
   }
-  const props = childElements(response, ns.dav, 'propstat')
-    .filter((propstat) =>
-      isFound(statusCode(firstChild(propstat, ns.dav, 'status'))),
-    )
-    .flatMap((propstat) => {
+  const propstats = childElements(response, ns.dav, 'propstat').map(
+    (propstat) => {
       const prop = firstChild(propstat, ns.dav, 'prop');
-      return prop === undefined ? [] : childElements(prop);
-    });
-  return { href, props };
+      return {
+        status: statusCode(firstChild(propstat, ns.dav, 'status')),
+        props: prop === undefined ? [] : childElements(prop),
+      };
+    },
+  );
+  return {
+    href,
+    status: statusCode(firstChild(response, ns.dav, 'status')),
+    props: propstats.flatMap(({ status, props }) =>
+      isFound(status) ? props : [],
+    ),
+    failed: propstats.flatMap(({ status, props }) =>
+      status === undefined || isSuccessStatus(status)
+        ? []
+        : props.map((prop) => ({ prop, status })),
+    ),
+  };
 };
 
 export const parseMultistatus = (
@@ -127,6 +145,19 @@ export const findProp = (
   resource.props.find(
     (prop) => prop.namespaceURI === namespace && prop.localName === localName,
   );
+
+// The non-2xx status that explains why a resource lacks a property: that of
+// its propstat or of the whole response, if the server named one.
+export const propFailure = (
+  resource: DavResource,
+  namespace: string,
+  localName: string,
+): number | undefined => {
+  const status =
+    resource.failed.find(({ prop }) => matches(prop, namespace, localName))
+      ?.status ?? resource.status;
+  return isFound(status) ? undefined : status;
+};
 
 export const propText = (
   resource: DavResource,

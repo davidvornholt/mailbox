@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Result } from 'effect';
 import { type DavClient, xmlBody } from '../../../shared/dav/client';
 import { lastSegment } from '../../../shared/dav/collections';
 import {
@@ -11,9 +11,11 @@ import {
   findProp,
   hasResourceType,
   ns,
+  propFailure,
   propText,
 } from '../../../shared/dav/xml';
 import { DavError, type DavRequestError } from '../../../shared/errors/dav';
+import { CalendarDataError } from '../errors/errors';
 import type { Calendar } from '../schemas/calendar';
 import { formatUtcStamp, type TimeWindow } from './ical-time';
 
@@ -97,26 +99,34 @@ export const listCalendars = (
 
 const toCalendarResource = (
   resource: DavResource,
-): ReadonlyArray<CalendarResource> => {
+): Result.Result<CalendarResource, CalendarDataError> => {
   const ics = propText(resource, ns.caldav, 'calendar-data');
-  return ics === undefined
-    ? []
-    : [
-        {
-          href: resource.href,
-          etag: propText(resource, ns.dav, 'getetag'),
-          ics,
-        },
-      ];
+  if (ics !== undefined) {
+    return Result.succeed({
+      href: resource.href,
+      etag: propText(resource, ns.dav, 'getetag'),
+      ics,
+    });
+  }
+  const status = propFailure(resource, ns.caldav, 'calendar-data');
+  return Result.fail(
+    new CalendarDataError({
+      href: resource.href,
+      message: `The server did not return the event data of ${resource.href}${status === undefined ? '' : ` (HTTP ${status})`}`,
+    }),
+  );
 };
 
 // The calendar objects with an event in the window; the server expands
-// recurring events to decide.
+// recurring events to decide. Objects the server could not return fail.
 export const queryEvents = (
   client: DavClient,
   calendarHref: string,
   window: TimeWindow,
-): Effect.Effect<ReadonlyArray<CalendarResource>, DavRequestError> =>
+): Effect.Effect<
+  ReadonlyArray<Result.Result<CalendarResource, CalendarDataError>>,
+  DavRequestError
+> =>
   client
     .report(
       calendarHref,
@@ -126,7 +136,7 @@ export const queryEvents = (
         `<d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${formatUtcStamp(window.startMs)}" end="${formatUtcStamp(window.endMs)}"/></c:comp-filter></c:comp-filter></c:filter>`,
       ),
     )
-    .pipe(Effect.map((resources) => resources.flatMap(toCalendarResource)));
+    .pipe(Effect.map((resources) => resources.map(toCalendarResource)));
 
 export const fetchCalendarObject = (
   client: DavClient,

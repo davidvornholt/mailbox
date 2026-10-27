@@ -16,7 +16,12 @@ import type {
   ContactDetail,
   ContactSummary,
 } from '../schemas/contacts';
-import { fetchContact, listAddressBooks, queryContacts } from './carddav';
+import {
+  type ContactResource,
+  fetchContact,
+  listAddressBooks,
+  queryContacts,
+} from './carddav';
 import {
   contactDetail,
   displayName,
@@ -76,6 +81,30 @@ export const matchesContact = (
   );
 };
 
+const contactSummary = (
+  account: string,
+  addressBook: string,
+  resource: Result.Result<ContactResource, ContactDataError>,
+): Effect.Effect<ContactSummary, ContactDataError> =>
+  Effect.fromResult(resource).pipe(
+    Effect.flatMap(({ href, vcard }) =>
+      parseVCard(href, vcard).pipe(
+        Effect.map((card): ContactSummary => {
+          const organization = organizationOf(card);
+          return {
+            account,
+            addressBook,
+            href,
+            name: displayName(card),
+            ...(organization === undefined ? {} : { organization }),
+            emails: emailsOf(card),
+            phones: phonesOf(card),
+          };
+        }),
+      ),
+    ),
+  );
+
 // Contacts of one account, and the vCards it could not read.
 export type AccountContacts = {
   readonly contacts: ReadonlyArray<ContactSummary>;
@@ -104,21 +133,7 @@ export const accountContacts = (
         queryContacts(client, book.href).pipe(
           Effect.map((resources) =>
             resources.map((resource) =>
-              parseVCard(resource.href, resource.vcard).pipe(
-                Effect.map((card): ContactSummary => {
-                  const organization = organizationOf(card);
-                  return {
-                    account: account.email,
-                    addressBook: book.name,
-                    href: resource.href,
-                    name: displayName(card),
-                    ...(organization === undefined ? {} : { organization }),
-                    emails: emailsOf(card),
-                    phones: phonesOf(card),
-                  };
-                }),
-                Effect.result,
-              ),
+              Effect.result(contactSummary(account.email, book.name, resource)),
             ),
           ),
           Effect.flatMap((parsed) => Effect.all(parsed)),

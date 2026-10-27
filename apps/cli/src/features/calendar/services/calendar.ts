@@ -136,17 +136,20 @@ export const accountEvents = (
         queryEvents(client, calendar.href, query.window).pipe(
           Effect.flatMap((resources) =>
             Effect.forEach(resources, (resource) =>
-              Effect.result(
-                datedEvents(
-                  resource,
-                  {
-                    account: account.email,
-                    calendar: calendar.name,
-                    window: query.window,
-                    text,
-                  },
-                  local,
+              Effect.fromResult(resource).pipe(
+                Effect.flatMap((found) =>
+                  datedEvents(
+                    found,
+                    {
+                      account: account.email,
+                      calendar: calendar.name,
+                      window: query.window,
+                      text,
+                    },
+                    local,
+                  ),
                 ),
+                Effect.result,
               ),
             ),
           ),

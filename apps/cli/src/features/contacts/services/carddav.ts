@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Result } from 'effect';
 import { type DavClient, xmlBody } from '../../../shared/dav/client';
 import { lastSegment } from '../../../shared/dav/collections';
 import {
@@ -9,9 +9,11 @@ import {
   type DavResource,
   hasResourceType,
   ns,
+  propFailure,
   propText,
 } from '../../../shared/dav/xml';
 import { DavError, type DavRequestError } from '../../../shared/errors/dav';
+import { ContactDataError } from '../errors/errors';
 import type { AddressBook } from '../schemas/contacts';
 
 // The vCard text of one contact, with the ETag a later change must match.
@@ -59,26 +61,35 @@ export const listAddressBooks = (
 
 const toContactResource = (
   resource: DavResource,
-): ReadonlyArray<ContactResource> => {
+): Result.Result<ContactResource, ContactDataError> => {
   const vcard = propText(resource, ns.carddav, 'address-data');
-  return vcard === undefined
-    ? []
-    : [
-        {
-          href: resource.href,
-          etag: propText(resource, ns.dav, 'getetag'),
-          vcard,
-        },
-      ];
+  if (vcard !== undefined) {
+    return Result.succeed({
+      href: resource.href,
+      etag: propText(resource, ns.dav, 'getetag'),
+      vcard,
+    });
+  }
+  const status = propFailure(resource, ns.carddav, 'address-data');
+  return Result.fail(
+    new ContactDataError({
+      href: resource.href,
+      message: `The server did not return the contact data of ${resource.href}${status === undefined ? '' : ` (HTTP ${status})`}`,
+    }),
+  );
 };
 
 // Every contact in the address book. An empty filter matches all of them
 // (RFC 6352, section 10.5); searching happens locally, because servers
-// differ in which text matches they support.
+// differ in which text matches they support. Contacts the server could not
+// return fail.
 export const queryContacts = (
   client: DavClient,
   addressBookHref: string,
-): Effect.Effect<ReadonlyArray<ContactResource>, DavRequestError> =>
+): Effect.Effect<
+  ReadonlyArray<Result.Result<ContactResource, ContactDataError>>,
+  DavRequestError
+> =>
   client
     .report(
       addressBookHref,
@@ -88,7 +99,7 @@ export const queryContacts = (
         '<d:prop><d:getetag/><card:address-data/></d:prop><card:filter/>',
       ),
     )
-    .pipe(Effect.map((resources) => resources.flatMap(toContactResource)));
+    .pipe(Effect.map((resources) => resources.map(toContactResource)));
 
 export const fetchContact = (
   client: DavClient,

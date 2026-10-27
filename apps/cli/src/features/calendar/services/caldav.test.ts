@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect } from 'effect';
+import { Effect, Result } from 'effect';
 import {
   davResponse,
   discoveryRoutes,
@@ -91,6 +91,8 @@ describe('queryEvents', () => {
             '/calendars/me/work/b.ics',
             '<d:getetag>"b1"</d:getetag>',
           ),
+          '<d:response><d:href>/calendars/me/work/c.ics</d:href><d:propstat><d:prop><d:getetag>"c1"</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><c:calendar-data/></d:prop><d:status>HTTP/1.1 500 Internal Server Error</d:status></d:propstat></d:response>',
+          '<d:response><d:href>/calendars/me/work/d.ics</d:href><d:status>HTTP/1.1 403 Forbidden</d:status></d:response>',
         ),
       },
     });
@@ -101,13 +103,23 @@ describe('queryEvents', () => {
         windowOf('2026-10-26T23:00:00Z', '2026-11-02T23:00:00Z'),
       ),
     );
-    expect(resources).toEqual([
+    expect(
+      resources.map(
+        Result.match({
+          onSuccess: (resource) => resource,
+          onFailure: (error) => `${error._tag}: ${error.message}`,
+        }),
+      ),
+    ).toEqual([
       {
         href: '/calendars/me/work/a.ics',
         etag: '"a1"',
         // XML parsing turns the CRLF line breaks into LF.
         ics: 'BEGIN:VCALENDAR\nEND:VCALENDAR',
       },
+      'CalendarDataError: The server did not return the event data of /calendars/me/work/b.ics',
+      'CalendarDataError: The server did not return the event data of /calendars/me/work/c.ics (HTTP 500)',
+      'CalendarDataError: The server did not return the event data of /calendars/me/work/d.ics (HTTP 403)',
     ]);
     expect(requests[0]?.depth).toBe('1');
     expect(requests[0]?.body).toContain(
