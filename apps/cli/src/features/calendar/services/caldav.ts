@@ -1,4 +1,4 @@
-import { Effect, Result } from 'effect';
+import { Duration, Effect, Result } from 'effect';
 import { type DavClient, xmlBody } from '../../../shared/dav/client';
 import { lastSegment } from '../../../shared/dav/collections';
 import {
@@ -117,6 +117,14 @@ const toCalendarResource = (
   );
 };
 
+// pim reads a floating time, such as an all-day date, in the local zone, but
+// the server may read it in UTC or another zone (RFC 4791, section 7.3). UTC
+// offsets lie between -12:00 and +14:00, so two readings differ by at most 26
+// hours; the server range is that much wider, and occurrencesIn keeps the
+// exact window.
+const floatingHours = 26;
+const floatingMs = Duration.toMillis(Duration.hours(floatingHours));
+
 // The calendar objects with an event in the window; the server expands
 // recurring events to decide. Objects the server could not return fail.
 export const queryEvents = (
@@ -133,7 +141,7 @@ export const queryEvents = (
       '1',
       xmlBody(
         'c:calendar-query',
-        `<d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${formatUtcStamp(window.startMs)}" end="${formatUtcStamp(window.endMs)}"/></c:comp-filter></c:comp-filter></c:filter>`,
+        `<d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${formatUtcStamp(window.startMs - floatingMs)}" end="${formatUtcStamp(window.endMs + floatingMs)}"/></c:comp-filter></c:comp-filter></c:filter>`,
       ),
     )
     .pipe(Effect.map((resources) => resources.map(toCalendarResource)));

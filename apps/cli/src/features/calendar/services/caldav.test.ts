@@ -79,7 +79,7 @@ describe('listCalendars', () => {
 });
 
 describe('queryEvents', () => {
-  it('asks for the events in the window in UTC', async () => {
+  it('asks for the events around the window in UTC', async () => {
     const { client, requests } = fakeDavServer({
       'REPORT /calendars/me/work/': {
         body: multistatus(
@@ -122,8 +122,10 @@ describe('queryEvents', () => {
       'CalendarDataError: The server did not return the event data of /calendars/me/work/d.ics (HTTP 403)',
     ]);
     expect(requests[0]?.depth).toBe('1');
+    // Widened by 26 hours on each side: a server that reads a floating 23:30
+    // on November 2 in UTC, or in any other zone, still returns it.
     expect(requests[0]?.body).toContain(
-      '<c:time-range start="20261026T230000Z" end="20261102T230000Z"/>',
+      '<c:time-range start="20261025T210000Z" end="20261104T010000Z"/>',
     );
   });
 });
