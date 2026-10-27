@@ -7,10 +7,7 @@ import {
 } from '../../../shared/dav/collections';
 import { Dav, type DavSessionError } from '../../../shared/dav/dav';
 import type { DavRequestError } from '../../../shared/errors/dav';
-import {
-  AddressBookNotFoundError,
-  type ContactDataError,
-} from '../errors/errors';
+import { AddressBookNotFoundError, ContactDataError } from '../errors/errors';
 import type {
   AddressBook,
   ContactDetail,
@@ -81,6 +78,21 @@ export const matchesContact = (
   );
 };
 
+// ical.js decodes a value only when it is read, so a malformed field, such as
+// TEL;VALUE=utc-offset:garbage, throws here rather than in parseVCard.
+const readContact = <A>(
+  href: string,
+  read: () => A,
+): Effect.Effect<A, ContactDataError> =>
+  Effect.try({
+    try: read,
+    catch: (cause) =>
+      new ContactDataError({
+        href,
+        message: `Could not read ${href}: ${String(cause)}`,
+      }),
+  });
+
 const contactSummary = (
   account: string,
   addressBook: string,
@@ -89,18 +101,20 @@ const contactSummary = (
   Effect.fromResult(resource).pipe(
     Effect.flatMap(({ href, vcard }) =>
       parseVCard(href, vcard).pipe(
-        Effect.map((card): ContactSummary => {
-          const organization = organizationOf(card);
-          return {
-            account,
-            addressBook,
-            href,
-            name: displayName(card),
-            ...(organization === undefined ? {} : { organization }),
-            emails: emailsOf(card),
-            phones: phonesOf(card),
-          };
-        }),
+        Effect.flatMap((card) =>
+          readContact(href, (): ContactSummary => {
+            const organization = organizationOf(card);
+            return {
+              account,
+              addressBook,
+              href,
+              name: displayName(card),
+              ...(organization === undefined ? {} : { organization }),
+              emails: emailsOf(card),
+              phones: phonesOf(card),
+            };
+          }),
+        ),
       ),
     ),
   );
@@ -178,12 +192,12 @@ export const accountContact = (
     const client = yield* dav.client(account);
     const resource = yield* fetchContact(client, href);
     const card = yield* parseVCard(href, resource.vcard);
-    return {
-      ...contactDetail(card, {
+    const detail = yield* readContact(href, () =>
+      contactDetail(card, {
         account: account.email,
         href,
         etag: resource.etag,
       }),
-      vcard: resource.vcard,
-    };
+    );
+    return { ...detail, vcard: resource.vcard };
   });

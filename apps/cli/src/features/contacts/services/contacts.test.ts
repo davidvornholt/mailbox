@@ -78,6 +78,14 @@ describe('accountContacts', () => {
             '/addressbooks/me/contacts/c.vcf',
             '<card:address-data>garbage</card:address-data>',
           ),
+          davResponse(
+            '/addressbooks/me/contacts/d.vcf',
+            `<card:address-data>${vcard('FN:Ana Desk', 'TEL;TYPE=work:+49 30 1234')}</card:address-data>`,
+          ),
+          davResponse(
+            '/addressbooks/me/contacts/e.vcf',
+            `<card:address-data>${vcard('FN:Ana Broken', 'TEL;VALUE=utc-offset:garbage')}</card:address-data>`,
+          ),
         ),
       },
     });
@@ -99,12 +107,26 @@ describe('accountContacts', () => {
         emails: ['ana@example.com'],
         phones: [],
       },
+      {
+        account: 'me@example.com',
+        addressBook: 'Contacts',
+        href: '/addressbooks/me/contacts/d.vcf',
+        name: 'Ana Desk',
+        emails: [],
+        phones: ['+49 30 1234'],
+      },
     ]);
     expect(result.unreadable).toEqual([
       {
         account: 'me@example.com',
         errorTag: 'ContactDataError',
         message: expect.stringContaining('/addressbooks/me/contacts/c.vcf'),
+      },
+      {
+        account: 'me@example.com',
+        errorTag: 'ContactDataError',
+        message:
+          'Could not read /addressbooks/me/contacts/e.vcf: Error: Could not extract integer from "ar"',
       },
     ]);
     expect(requests.at(-1)?.body).toContain('<card:filter/>');

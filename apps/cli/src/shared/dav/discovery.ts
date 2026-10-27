@@ -1,7 +1,7 @@
 import { Array as Arr, Effect } from 'effect';
 import { DavError, type DavRequestError } from '../errors/dav';
 import type { DavClient } from './client';
-import { collectionPath } from './collections';
+import { collectionPath, decodePercent } from './collections';
 import { type DavResource, ns, propHrefs, propText } from './xml';
 
 export type Principal = {
@@ -68,7 +68,7 @@ export const discoverPrincipal = (
                 address.toLowerCase().startsWith(mailtoPrefix),
               )
               .map((address) =>
-                decodeURIComponent(address.slice(mailtoPrefix.length)),
+                decodePercent(address.slice(mailtoPrefix.length)),
               ),
     };
   });

@@ -8,17 +8,23 @@ export type NamedCollection = {
 
 const trailingSlashes = /\/*$/u;
 
+// Decodes percent escapes. Text with an invalid escape, such as the calendar
+// name "100% focus" or a malformed href from a server, stays as written.
+export const decodePercent = (text: string): string =>
+  Result.getOrElse(
+    Result.try(() => decodeURIComponent(text)),
+    () => text,
+  );
+
 // The decoded path of an href, with one trailing slash, so that hrefs from
 // the command line and from the server compare equal.
 export const collectionPath = (href: string): string =>
-  decodeURIComponent(
+  decodePercent(
     URL.parse(href, 'https://dav.invalid')?.pathname ?? href,
   ).replace(trailingSlashes, '/');
 
 export const lastSegment = (href: string): string =>
-  decodeURIComponent(
-    href.replace(trailingSlashes, '').split('/').at(-1) ?? href,
-  );
+  decodePercent(href.replace(trailingSlashes, '').split('/').at(-1) ?? href);
 
 // Finds a collection by its href or, case-insensitively, by its name.
 export const findCollection = <C extends NamedCollection>(

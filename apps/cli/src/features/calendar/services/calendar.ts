@@ -7,10 +7,7 @@ import {
 } from '../../../shared/dav/collections';
 import { Dav, type DavSessionError } from '../../../shared/dav/dav';
 import type { DavRequestError } from '../../../shared/errors/dav';
-import {
-  type CalendarDataError,
-  CalendarNotFoundError,
-} from '../errors/errors';
+import { CalendarDataError, CalendarNotFoundError } from '../errors/errors';
 import type { Calendar, EventDetail, EventSummary } from '../schemas/calendar';
 import {
   type CalendarResource,
@@ -87,6 +84,22 @@ type EventSearch = {
   readonly text: string | undefined;
 };
 
+// ical.js decodes a value only when it is read, so a malformed field, such as
+// an invalid DURATION, throws here rather than in parseCalendar. So does an
+// event pim can't expand completely.
+const readEvent = <A>(
+  href: string,
+  read: () => A,
+): Effect.Effect<A, CalendarDataError> =>
+  Effect.try({
+    try: read,
+    catch: (cause) =>
+      new CalendarDataError({
+        href,
+        message: `Could not read ${href}: ${String(cause)}`,
+      }),
+  });
+
 // The events of one calendar object that overlap the window and mention the
 // searched text.
 const datedEvents = (
@@ -95,24 +108,26 @@ const datedEvents = (
   local: DateTime.TimeZone,
 ): Effect.Effect<ReadonlyArray<DatedEvent>, CalendarDataError> =>
   parseCalendar(resource.href, resource.ics).pipe(
-    Effect.map(({ vcalendar }) =>
-      occurrencesIn(vcalendar, search.window, local)
-        .filter(
-          (occurrence) =>
-            search.text === undefined || mentions(occurrence, search.text),
-        )
-        .map((occurrence) => ({
-          startMs: occurrence.startMs,
-          event: eventSummary(
-            occurrence,
-            {
-              account: search.account,
-              calendar: search.calendar,
-              href: resource.href,
-            },
-            local,
-          ),
-        })),
+    Effect.flatMap(({ vcalendar }) =>
+      readEvent(resource.href, () =>
+        occurrencesIn(vcalendar, search.window, local)
+          .filter(
+            (occurrence) =>
+              search.text === undefined || mentions(occurrence, search.text),
+          )
+          .map((occurrence) => ({
+            startMs: occurrence.startMs,
+            event: eventSummary(
+              occurrence,
+              {
+                account: search.account,
+                calendar: search.calendar,
+                href: resource.href,
+              },
+              local,
+            ),
+          })),
+      ),
     ),
   );
 
@@ -193,12 +208,12 @@ export const accountEvent = (
     const client = yield* dav.client(account);
     const resource = yield* fetchCalendarObject(client, href);
     const object = yield* parseCalendar(href, resource.ics);
-    return {
-      ...eventDetail(
+    const detail = yield* readEvent(href, () =>
+      eventDetail(
         object,
         { account: account.email, href, etag: resource.etag },
         local,
       ),
-      ics: resource.ics,
-    };
+    );
+    return { ...detail, ics: resource.ics };
   });
