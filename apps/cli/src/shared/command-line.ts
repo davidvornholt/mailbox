@@ -248,7 +248,7 @@ const valueFor = (
 };
 
 export type CommandSpec<F extends Flags> = {
-  // Space-separated words after the program name, such as "draft save".
+  // Space-separated words after the program name, such as "mail draft save".
   readonly name: string;
   readonly summary: string;
   readonly description?: string;

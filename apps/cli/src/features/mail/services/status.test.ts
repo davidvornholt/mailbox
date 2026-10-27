@@ -15,7 +15,7 @@ describe('statusFromError', () => {
     );
     expect(status.state).toBe('no-credentials');
     expect(status.ok).toBe(false);
-    expect(status.message).toContain('mailbox login --account a@b.com');
+    expect(status.message).toContain('pim login --account a@b.com');
   });
 
   it.each([

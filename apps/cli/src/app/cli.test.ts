@@ -16,7 +16,7 @@ const runCli = (
   options: { readonly config?: string; readonly stdin?: string } = {},
 ): CliResult => {
   const env = { ...Bun.env };
-  env.MAILBOX_CONFIG = options.config ?? fixturePath;
+  env.PIM_CONFIG = options.config ?? fixturePath;
   const result = Bun.spawnSync(['bun', cliPath, ...args], {
     env,
     stdin: Buffer.from(options.stdin ?? ''),
@@ -39,14 +39,14 @@ const errorOf = (result: CliResult) =>
 // on CI runners, well past bun test's 5s default timeout.
 const subprocessTimeoutMs = 30_000;
 
-describe('mailbox cli', () => {
+describe('pim cli', () => {
   it(
     'prints help on stdout and exits 0',
     () => {
       const overview = runCli(['--help']);
       expect(overview.exitCode).toBe(0);
-      expect(overview.stdout).toContain('draft save');
-      const commandHelp = runCli(['draft', 'save', '--help']);
+      expect(overview.stdout).toContain('mail draft save');
+      const commandHelp = runCli(['mail', 'draft', 'save', '--help']);
       expect(commandHelp.exitCode).toBe(0);
       expect(commandHelp.stdout).toContain('--reply-uid <n>');
     },
@@ -56,7 +56,7 @@ describe('mailbox cli', () => {
   it(
     'reports invalid arguments as JSON and exits 2',
     () => {
-      const result = runCli(['folders', '--acount', 'a@example.com']);
+      const result = runCli(['mail', 'folders', '--acount', 'a@example.com']);
       expect(result.exitCode).toBe(2);
       expect(errorOf(result)).toEqual({
         tag: 'UsageError',
@@ -92,7 +92,12 @@ describe('mailbox cli', () => {
       });
       expect(missing.exitCode).toBe(1);
       expect(errorOf(missing).tag).toBe('ConfigError');
-      const unknown = runCli(['folders', '--account', 'nobody@example.com']);
+      const unknown = runCli([
+        'mail',
+        'folders',
+        '--account',
+        'nobody@example.com',
+      ]);
       expect(unknown.exitCode).toBe(1);
       expect(errorOf(unknown).message).toContain('test@example.com');
     },
@@ -102,13 +107,14 @@ describe('mailbox cli', () => {
   it(
     'rejects invalid search and tag input before connecting',
     () => {
-      const search = runCli(['search', '--folder', 'INBOX']);
+      const search = runCli(['mail', 'search', '--folder', 'INBOX']);
       expect(search.exitCode).toBe(2);
       expect(errorOf(search)).toEqual({
         tag: 'SearchInputError',
         message: 'Searching a folder requires an account.',
       });
       const tag = runCli([
+        'mail',
         'draft',
         'tag',
         '--account=test@example.com',
@@ -127,7 +133,15 @@ describe('mailbox cli', () => {
     'rejects an empty draft body before connecting',
     () => {
       const result = runCli(
-        ['draft', 'save', '--account', 'TEST@example.com', '--to', 'x@y.z'],
+        [
+          'mail',
+          'draft',
+          'save',
+          '--account',
+          'TEST@example.com',
+          '--to',
+          'x@y.z',
+        ],
         { stdin: '  \n' },
       );
       expect(result.exitCode).toBe(2);

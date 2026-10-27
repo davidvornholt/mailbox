@@ -1,4 +1,4 @@
-# Fixture consumed by config.test.ts via MAILBOX_CONFIG.
+# Fixture consumed by config.test.ts via PIM_CONFIG.
 
 [[accounts]]
 email = "test@example.com"

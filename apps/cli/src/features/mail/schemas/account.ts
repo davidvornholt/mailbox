@@ -3,7 +3,7 @@ import { Effect, Result, Schema, SchemaIssue } from 'effect';
 // Keyring service namespace for stored credentials: IMAP passwords, or refresh
 // tokens for Microsoft accounts. They live in the OS keyring (see
 // services/secrets.ts), keyed by account email.
-export const keyringService = 'mailbox';
+export const keyringService = 'pim';
 
 // How an account logs in to IMAP: with a password, or with a Microsoft sign-in
 // for Outlook.com and Microsoft 365, which no longer accept passwords.

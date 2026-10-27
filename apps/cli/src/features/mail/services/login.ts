@@ -21,7 +21,7 @@ type RefreshTokens = (
   refreshToken: string,
 ) => Effect.Effect<MicrosoftTokens, MailError>;
 
-// A login obtained by `mailbox login`: what IMAP checks now, and what the
+// A login obtained by `pim login`: what IMAP checks now, and what the
 // keyring keeps for later commands.
 export type NewLogin = {
   readonly imap: ImapLogin;
@@ -53,7 +53,7 @@ export const storeVerifiedLogin = (
 // Turns the stored credential into an IMAP login. A Microsoft access token
 // lasts about an hour, so each command trades the stored refresh token for a
 // new one. Keeping the rotated refresh token extends the sign-in, which would
-// otherwise expire 90 days after `mailbox login`.
+// otherwise expire 90 days after `pim login`.
 export const imapLoginFor = (
   account: Account,
   credentials: {

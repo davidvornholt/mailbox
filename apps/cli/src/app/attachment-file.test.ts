@@ -3,7 +3,7 @@ import { Effect, Result } from 'effect';
 import type { AttachmentContent } from '../features/mail/schemas/mail';
 import { checkOut, safeFilename, writeAttachment } from './attachment-file';
 
-const tempDir = `${Bun.env.TMPDIR ?? '/tmp'}/mailbox-attachment-test-${crypto.randomUUID()}`;
+const tempDir = `${Bun.env.TMPDIR ?? '/tmp'}/pim-attachment-test-${crypto.randomUUID()}`;
 
 const attachment = (filename: string | null): AttachmentContent => ({
   part: '2',

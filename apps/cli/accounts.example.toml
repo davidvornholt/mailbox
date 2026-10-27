@@ -1,4 +1,4 @@
-# Copy to ~/.config/mailbox/accounts.toml, then run: mailbox login
+# Copy to ~/.config/pim/accounts.toml, then run: pim login
 # Passwords and Microsoft sign-ins live in the OS keyring, not in this file.
 
 [[accounts]]

@@ -22,7 +22,7 @@ export const statusFromError = (
         email,
         ok: false,
         state: 'no-credentials',
-        message: `no credentials stored; run: mailbox login --account ${email}`,
+        message: `no credentials stored; run: pim login --account ${email}`,
       };
     case 'ImapError':
     case 'OAuthError':

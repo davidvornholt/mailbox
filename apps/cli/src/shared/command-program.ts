@@ -29,17 +29,57 @@ const overview = <A>(
     program.footer,
   ].join('\n\n');
 
+const words = <A>(command: Command<A>): ReadonlyArray<string> =>
+  command.name.split(' ');
+
+const startsWith = (
+  name: ReadonlyArray<string>,
+  prefix: ReadonlyArray<string>,
+): boolean => prefix.every((word, index) => name[index] === word);
+
 const matchCommand = <A>(
   commands: ReadonlyArray<Command<A>>,
   argv: ReadonlyArray<string>,
 ): Command<A> | undefined =>
-  commands.find((command) =>
-    command.name.split(' ').every((word, index) => argv[index] === word),
-  );
+  commands.find((command) => startsWith(argv, words(command)));
+
+// The longest argv prefix that names a command group, such as `mail` or
+// `mail draft`; empty when argv does not start with a group.
+const groupPrefix = <A>(
+  commands: ReadonlyArray<Command<A>>,
+  argv: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  const isGroup = (prefix: ReadonlyArray<string>) =>
+    commands.some((command) => {
+      const name = words(command);
+      return name.length > prefix.length && startsWith(name, prefix);
+    });
+  const end = argv.findIndex((_, index) => !isGroup(argv.slice(0, index + 1)));
+  return argv.slice(0, end === -1 ? argv.length : end);
+};
+
+const groupCommands = <A>(
+  commands: ReadonlyArray<Command<A>>,
+  prefix: ReadonlyArray<string>,
+): ReadonlyArray<Command<A>> =>
+  commands.filter((command) => startsWith(words(command), prefix));
+
+const helpText = <A>(
+  program: Program<A>,
+  topic: ReadonlyArray<string>,
+): string => {
+  const command = matchCommand(program.commands, topic);
+  return command === undefined
+    ? overview(
+        program,
+        groupCommands(program.commands, groupPrefix(program.commands, topic)),
+      )
+    : command.help(program.name);
+};
 
 // `help`, `--help`, and no arguments print the overview; `help <command>` and
 // `<command> --help` print that command's help. A command group such as
-// `draft` prints the overview of its subcommands.
+// `mail` or `mail draft` prints the overview of its subcommands.
 export const resolve = <A>(
   program: Program<A>,
   argv: ReadonlyArray<string>,
@@ -47,32 +87,22 @@ export const resolve = <A>(
   const [first] = argv;
   if (first === undefined || first === 'help' || isHelpFlag(first)) {
     const topic = first === 'help' ? argv.slice(1) : [];
-    const command = matchCommand(program.commands, topic);
-    return {
-      _tag: 'Help',
-      text:
-        command === undefined
-          ? overview(program, program.commands)
-          : command.help(program.name),
-    };
+    return { _tag: 'Help', text: helpText(program, topic) };
   }
   const command = matchCommand(program.commands, argv);
   if (command === undefined) {
-    const group = program.commands.filter((candidate) =>
-      candidate.name.startsWith(`${first} `),
-    );
-    if (group.length > 0 && argv.slice(1).every(isHelpFlag)) {
-      return { _tag: 'Help', text: overview(program, group) };
+    const prefix = groupPrefix(program.commands, argv);
+    if (prefix.length > 0 && argv.slice(prefix.length).every(isHelpFlag)) {
+      return { _tag: 'Help', text: helpText(program, prefix) };
     }
-    const attempted = group.length > 0 ? argv.slice(0, 2) : [first];
     return {
       _tag: 'Invalid',
       error: new UsageError({
-        message: `unknown command "${attempted.join(' ')}"; run: ${program.name} --help`,
+        message: `unknown command "${argv.slice(0, prefix.length + 1).join(' ')}"; run: ${program.name} --help`,
       }),
     };
   }
-  const args = argv.slice(command.name.split(' ').length);
+  const args = argv.slice(words(command).length);
   if (args.some(isHelpFlag)) {
     return { _tag: 'Help', text: command.help(program.name) };
   }
