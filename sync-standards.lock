@@ -1,6 +1,6 @@
 {
   "upstream": "github:davidvornholt/standards",
-  "sha": "add1439209bf5a9b7f05aa5021a8570918d66c3c",
+  "sha": "ddc373d0bab54b8e17ae3d23d8dc4338bf967add",
   "files": {
     ".agents/skills/ci-pipelines/SKILL.md": "d745c3b911336f6dca81e6c016a7eec5673b7f75e7c50de476041c70a17c97ac",
     ".agents/skills/database/agents/openai.yaml": "4c9f47df24219d5b195c88eef374431f64b453ed1ba057f50d4c11e4549343c1",
@@ -9,7 +9,7 @@
     ".agents/skills/declarative-infra/references/app-release.md": "a57b1299b47ee36a2bdba6eb4e43222b38aaa08adcd79a60ba36387785e3a294",
     ".agents/skills/declarative-infra/references/bootstrap.md": "0ab6d25fa624b4f688b2f0389f9fa056bcfa9690c12d0177a4f40bc291d00d0a",
     ".agents/skills/declarative-infra/references/pr-previews.md": "f6c9eae804a80759627bc387a8870446fe65dd8fcf13abfc6b86a17a53818e05",
-    ".agents/skills/declarative-infra/references/secrets.md": "d291569944425ab765c2a46c1c5cd71be30488e65739a8e642f0d4c822336d6f",
+    ".agents/skills/declarative-infra/references/secrets.md": "cc8d2e6907c06255a33a082320ee3ef84e0b22e08b709d0a40bb13bdfb1a685e",
     ".agents/skills/declarative-infra/references/vendor-images.md": "3e4b649c76e2950b640b6b680f73597ca770937c6c708251329c64b7030e309a",
     ".agents/skills/declarative-infra/SKILL.md": "95bd401fe03e441fceb8bce73b2fb6c7f5cf2c0d7faabc4cd7b28e9ecaaf5cfa",
     ".agents/skills/frontend-design/LICENSE.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",

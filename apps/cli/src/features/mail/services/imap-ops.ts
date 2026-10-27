@@ -40,10 +40,10 @@ const toFolderInfo = (folder: ListResponse): FolderInfo => ({
   subscribed: folder.subscribed,
 });
 
+// mailparser keeps the first of duplicated single-value headers such as Date,
+// so read the same occurrence that parsed.date comes from.
 const rawHeaderValue = (parsed: ParsedMail, key: string): string => {
-  const line = parsed.headerLines.findLast(
-    (header) => header.key === key,
-  )?.line;
+  const line = parsed.headerLines.find((header) => header.key === key)?.line;
   if (line === undefined) {
     return '';
   }
