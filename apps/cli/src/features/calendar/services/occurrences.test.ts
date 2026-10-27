@@ -84,6 +84,24 @@ describe('occurrencesIn for a series', () => {
     );
     expect(starts(found)).toEqual(['2026-10-22T08:00:00.000Z']);
   });
+
+  it('throws rather than stop a series too long to expand', () => {
+    const minutely = vcalendarOf(
+      ...vevent(
+        'UID:minutely@example.com',
+        'DTSTAMP:20261001T000000Z',
+        'DTSTART:20261001T000000Z',
+        'RRULE:FREQ=MINUTELY',
+      ),
+    );
+    expect(() =>
+      occurrencesIn(
+        minutely,
+        windowOf('2026-11-06T00:00:00Z', '2026-11-07T00:00:00Z'),
+        berlin,
+      ),
+    ).toThrow('minutely@example.com');
+  });
 });
 
 describe('occurrencesIn for single events', () => {

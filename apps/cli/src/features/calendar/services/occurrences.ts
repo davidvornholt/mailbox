@@ -14,6 +14,7 @@ export type Occurrence = {
 };
 
 // Stops a rule without an end, such as FREQ=MINUTELY, from running forever.
+// A series with more occurrences before the window ends can't be listed.
 const maxRuleSteps = 50_000;
 
 export const tzidOf = (
@@ -116,10 +117,14 @@ const ruleOccurrences = (
     let step = 0, next = iterator.next();
     next !== null &&
     next !== undefined &&
-    step < maxRuleSteps &&
     instantOf(next, ruleTzid, local) < window.endMs;
     step += 1, next = iterator.next()
   ) {
+    if (step === maxRuleSteps) {
+      throw new Error(
+        `Event ${event.uid} repeats more than ${maxRuleSteps} times before the end of the requested time range, more than can be listed`,
+      );
+    }
     const details = event.getOccurrenceDetails(next);
     const slotTzid =
       details.item === event
