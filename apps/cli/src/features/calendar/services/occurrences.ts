@@ -210,11 +210,46 @@ const isExcluded = (component: ICAL.Component, time: ICAL.Time): boolean =>
         : excluded.compare(time) === 0,
     );
 
-// The rule's occurrences until the window ends, with overrides applied.
+const millisPerDay = 86_400_000;
+
+// How far the rule must run to find every occurrence that can fall in the
+// window. An override with RANGE=THISANDFUTURE moves each later occurrence by
+// as much as its own, so one moved back can pull occurrences from after the
+// window into it. ical.js moves them by wall-clock time, so a DST change can
+// add an hour or two to that; a day covers it. maxRuleSteps still bounds the
+// work of a long move.
+const horizonOf = (
+  overrides: ReadonlyArray<ICAL.Component>,
+  ruleTzid: string | undefined,
+  window: TimeWindow,
+  local: DateTime.TimeZone,
+): number =>
+  overrides.reduce((horizonMs, component) => {
+    const moved = new ICAL.Event(component);
+    if (!moved.modifiesFuture()) {
+      return horizonMs;
+    }
+    const slotMs = instantOf(
+      moved.recurrenceId,
+      tzidOf(component, 'recurrence-id') ?? ruleTzid,
+      local,
+    );
+    const startMs = instantOf(
+      moved.startDate,
+      tzidOf(component, 'dtstart'),
+      local,
+    );
+    return Math.max(horizonMs, window.endMs + slotMs - startMs + millisPerDay);
+  }, window.endMs);
+
+// A window, and how far its series must run to find every occurrence in it.
+type SeriesWindow = TimeWindow & { readonly horizonMs: number };
+
+// The rule's occurrences until the horizon, with overrides applied.
 const ruleOccurrences = (
   event: ICAL.Event,
   ruleTzid: string | undefined,
-  window: TimeWindow,
+  window: SeriesWindow,
   local: DateTime.TimeZone,
 ): ReadonlyArray<Occurrence> => {
   // DTSTART is always the first instance (RFC 5545, section 3.8.5.2), but
@@ -224,7 +259,7 @@ const ruleOccurrences = (
     component.hasProperty('rrule') || isExcluded(component, startDate)
   );
   const found: Array<Occurrence> =
-    addsStart && instantOf(startDate, ruleTzid, local) < window.endMs
+    addsStart && instantOf(startDate, ruleTzid, local) < window.horizonMs
       ? [...inWindow(instanceAt(event, startDate, ruleTzid), window, local)]
       : [];
   const iterator = event.iterator();
@@ -236,7 +271,7 @@ const ruleOccurrences = (
       next instanceof ICAL.Period ? next.start : next,
       ruleTzid,
       local,
-    ) < window.endMs;
+    ) < window.horizonMs;
     step += 1, next = iterator.next()
   ) {
     if (step === maxRuleSteps) {
@@ -252,12 +287,12 @@ const ruleOccurrences = (
   return found;
 };
 
-// An override can move an occurrence from after the window into it; the
-// rule stopped before reaching its original slot.
+// An override can move an occurrence from after the horizon into the window;
+// the rule stopped before reaching its original slot.
 const movedIntoWindow = (
   overrides: ReadonlyArray<ICAL.Component>,
   ruleTzid: string | undefined,
-  window: TimeWindow,
+  window: SeriesWindow,
   local: DateTime.TimeZone,
 ): ReadonlyArray<Occurrence> =>
   overrides.flatMap((component) => {
@@ -266,7 +301,7 @@ const movedIntoWindow = (
       time: moved.recurrenceId,
       tzid: tzidOf(component, 'recurrence-id') ?? ruleTzid,
     };
-    return instantOf(slot.time, slot.tzid, local) < window.endMs
+    return instantOf(slot.time, slot.tzid, local) < window.horizonMs
       ? []
       : inWindow(asStored(moved, slot), window, local);
   });
@@ -283,9 +318,13 @@ const expandSeries = (
   }
   const ruleTzid = tzidOf(master, 'dtstart');
   try {
+    const seriesWindow = {
+      ...window,
+      horizonMs: horizonOf(overrides, ruleTzid, window, local),
+    };
     return [
-      ...ruleOccurrences(event, ruleTzid, window, local),
-      ...movedIntoWindow(overrides, ruleTzid, window, local),
+      ...ruleOccurrences(event, ruleTzid, seriesWindow, local),
+      ...movedIntoWindow(overrides, ruleTzid, seriesWindow, local),
     ];
   } catch (cause) {
     // ical.js's own errors don't say which event they are about.

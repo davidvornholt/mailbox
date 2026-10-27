@@ -52,28 +52,6 @@ describe('occurrencesIn for a series', () => {
     ).toEqual(['2026-10-20T08:00:00.000Z', '2026-11-03T09:00:00.000Z']);
   });
 
-  it('takes a changed occurrence from its override', () => {
-    const found = occurrencesIn(
-      vcalendarOf(
-        ...weeklySeries,
-        ...override(
-          'RECURRENCE-ID;TZID=Europe/Berlin:20261027T100000',
-          'DTSTART;TZID=Europe/Berlin:20261027T150000',
-          'DTEND;TZID=Europe/Berlin:20261027T160000',
-          'SUMMARY:Moved sync',
-        ),
-      ),
-      october,
-      berlin,
-    );
-    const moved = found.find(
-      ({ startMs }) => startMs === Date.parse('2026-10-27T14:00:00Z'),
-    );
-    expect(found).toHaveLength(3);
-    expect(moved?.event.summary).toBe('Moved sync');
-    expect(moved?.recurrenceId?.ms).toBe(Date.parse('2026-10-27T09:00:00Z'));
-  });
-
   it('starts a series of dates at DTSTART and ends a period on its own', () => {
     const found = occurrencesIn(
       vcalendarOf(
@@ -97,6 +75,30 @@ describe('occurrencesIn for a series', () => {
       ['2026-10-27T09:00:00.000Z', '2026-10-27T12:00:00.000Z'],
     ]);
   });
+});
+
+describe('occurrencesIn for a series with overrides', () => {
+  it('takes a changed occurrence from its override', () => {
+    const found = occurrencesIn(
+      vcalendarOf(
+        ...weeklySeries,
+        ...override(
+          'RECURRENCE-ID;TZID=Europe/Berlin:20261027T100000',
+          'DTSTART;TZID=Europe/Berlin:20261027T150000',
+          'DTEND;TZID=Europe/Berlin:20261027T160000',
+          'SUMMARY:Moved sync',
+        ),
+      ),
+      october,
+      berlin,
+    );
+    const moved = found.find(
+      ({ startMs }) => startMs === Date.parse('2026-10-27T14:00:00Z'),
+    );
+    expect(found).toHaveLength(3);
+    expect(moved?.event.summary).toBe('Moved sync');
+    expect(moved?.recurrenceId?.ms).toBe(Date.parse('2026-10-27T09:00:00Z'));
+  });
 
   it('finds an occurrence moved into the window from after it', () => {
     const found = occurrencesIn(
@@ -117,6 +119,31 @@ describe('occurrencesIn for a series', () => {
       berlin,
     );
     expect(starts(found)).toEqual(['2026-10-22T08:00:00.000Z']);
+    // An override with RANGE=THISANDFUTURE moves the later occurrences too,
+    // here the one of October 29 to October 27.
+    const daily = vcalendarOf(
+      ...vevent(
+        'UID:series@example.com',
+        'DTSTAMP:20261001T000000Z',
+        'DTSTART:20261026T100000Z',
+        'DTEND:20261026T110000Z',
+        'RRULE:FREQ=DAILY;COUNT=5',
+      ),
+      ...override(
+        'RECURRENCE-ID;RANGE=THISANDFUTURE:20261028T100000Z',
+        'DTSTART:20261026T140000Z',
+        'DTEND:20261026T150000Z',
+      ),
+    );
+    expect(
+      starts(
+        occurrencesIn(
+          daily,
+          windowOf('2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z'),
+          berlin,
+        ),
+      ),
+    ).toEqual(['2026-10-27T10:00:00.000Z', '2026-10-27T14:00:00.000Z']);
   });
 });
 
