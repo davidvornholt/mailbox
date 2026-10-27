@@ -43,6 +43,21 @@ describe('decodeAccounts', () => {
     expect(account).toMatchObject(explicit);
   });
 
+  it('adds DAV settings that log in as the account user by default', () => {
+    const [account] = decoded({
+      accounts: [
+        {
+          ...minimalAccount,
+          user: 'login',
+          dav: { url: 'https://dav.b.com/' },
+        },
+      ],
+    });
+    expect(account?.dav).toEqual({ url: 'https://dav.b.com/', user: 'login' });
+    const [plain] = decoded({ accounts: [minimalAccount] });
+    expect(plain).not.toHaveProperty('dav');
+  });
+
   it('rejects an empty accounts list', () => {
     expect(rejection({ accounts: [] })).not.toBe('accepted');
   });
@@ -60,6 +75,16 @@ describe('decodeAccounts', () => {
     ['a misspelled key', { ...minimalAccount, hots: 'x' }, 'hots'],
     ['an out-of-range port', { ...minimalAccount, port: 70_000 }, 'port'],
     ['an unknown auth method', { ...minimalAccount, auth: 'oauth' }, 'auth'],
+    [
+      'a plain-http DAV url',
+      { ...minimalAccount, dav: { url: 'http://dav.b.com/' } },
+      'must be an https URL',
+    ],
+    [
+      'a misspelled DAV key',
+      { ...minimalAccount, dav: { url: 'https://dav.b.com/', usr: 'x' } },
+      'usr',
+    ],
   ])('rejects %s and names the field', (_case, account, field) => {
     expect(rejection({ accounts: [account] })).toContain(field);
   });

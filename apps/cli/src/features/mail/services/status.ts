@@ -1,8 +1,14 @@
 import { Duration, Effect } from 'effect';
+import type { Secrets } from '../../../shared/accounts/secrets';
+import {
+  authenticatedStatus,
+  type CredentialStatus,
+  failedStatus,
+  missingCredentialStatus,
+  storedCredentialStatus,
+} from '../../../shared/accounts/status';
 import { ImapError, type MailError } from '../errors/errors';
-import type { AccountStatus } from '../schemas/mail';
 import { Imap } from './imap';
-import { Secrets } from './secrets';
 
 // Cap each IMAP verification so one unreachable server can't stall the report.
 const verifyTimeoutSeconds = 20;
@@ -15,31 +21,21 @@ const verifyConcurrency = 5;
 export const statusFromError = (
   email: string,
   error: MailError,
-): AccountStatus => {
+): CredentialStatus => {
   switch (error._tag) {
     case 'MissingCredentialsError':
-      return {
-        email,
-        ok: false,
-        state: 'no-credentials',
-        message: `no credentials stored; run: pim login --account ${email}`,
-      };
+      return missingCredentialStatus('mail', email);
     case 'ImapError':
     case 'OAuthError':
-      return {
-        email,
-        ok: false,
-        state: 'unauthenticated',
-        message: error.message,
-      };
+      return failedStatus('mail', email, 'unauthenticated', error.message);
     default:
-      return { email, ok: false, state: 'error', message: error.message };
+      return failedStatus('mail', email, 'error', error.message);
   }
 };
 
 const verifyOne = (
   email: string,
-): Effect.Effect<AccountStatus, never, Imap | Secrets> =>
+): Effect.Effect<CredentialStatus, never, Imap | Secrets> =>
   Effect.gen(function* () {
     const imap = yield* Imap;
     return yield* imap.verify(email).pipe(
@@ -49,32 +45,7 @@ const verifyOne = (
           Effect.fail(new ImapError({ message: 'connection timed out' })),
       }),
       Effect.match({
-        onSuccess: () =>
-          ({
-            email,
-            ok: true,
-            state: 'authenticated',
-            message: 'authenticated',
-          }) as const,
-        onFailure: (error) => statusFromError(email, error),
-      }),
-    );
-  });
-
-const keyringOne = (
-  email: string,
-): Effect.Effect<AccountStatus, never, Imap | Secrets> =>
-  Effect.gen(function* () {
-    const secrets = yield* Secrets;
-    return yield* secrets.getCredential(email).pipe(
-      Effect.match({
-        onSuccess: () =>
-          ({
-            email,
-            ok: true,
-            state: 'credentials-stored',
-            message: 'credentials stored (not verified)',
-          }) as const,
+        onSuccess: () => authenticatedStatus('mail', email),
         onFailure: (error) => statusFromError(email, error),
       }),
     );
@@ -86,9 +57,10 @@ const keyringOne = (
 export const checkAccounts = (
   emails: ReadonlyArray<string>,
   options: { readonly verify: boolean },
-): Effect.Effect<ReadonlyArray<AccountStatus>, never, Imap | Secrets> =>
+): Effect.Effect<ReadonlyArray<CredentialStatus>, never, Imap | Secrets> =>
   Effect.forEach(
     emails,
-    (email) => (options.verify ? verifyOne(email) : keyringOne(email)),
+    (email) =>
+      options.verify ? verifyOne(email) : storedCredentialStatus('mail', email),
     { concurrency: verifyConcurrency },
   );

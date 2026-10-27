@@ -1,4 +1,5 @@
 import { Context, Duration, Effect, Layer, Result, Schema } from 'effect';
+import { loginCommand } from '../../../shared/accounts/secrets';
 import { OAuthError } from '../errors/errors';
 
 // Microsoft issues tokens only to registered apps. pim borrows Mozilla
@@ -250,7 +251,7 @@ const refresh = (
             new OAuthError({
               message:
                 failure.error === 'invalid_grant'
-                  ? `Microsoft rejected the stored sign-in for ${account}: ${failure.description} Ask the user to run: pim login --account ${account}`
+                  ? `Microsoft rejected the stored sign-in for ${account}: ${failure.description} Ask the user to run: ${loginCommand('mail', account)}`
                   : `Microsoft token refresh for ${account} failed: ${failure.description}`,
             }),
           ),

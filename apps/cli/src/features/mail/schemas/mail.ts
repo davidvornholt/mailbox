@@ -136,17 +136,3 @@ export type TagDraftsResult = {
 };
 
 export const defaultSearchLimit = 20;
-
-export type AccountStatusState =
-  | 'authenticated'
-  | 'credentials-stored'
-  | 'no-credentials'
-  | 'unauthenticated'
-  | 'error';
-
-export type AccountStatus = {
-  readonly email: string;
-  readonly ok: boolean;
-  readonly state: AccountStatusState;
-  readonly message: string;
-};

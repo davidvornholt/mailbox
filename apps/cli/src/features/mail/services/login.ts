@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
+import type { Account } from '../../../shared/accounts/account';
 import type { MailError } from '../errors/errors';
-import type { Account } from '../schemas/account';
 import type { ImapLogin } from './imap-client';
 import type { MicrosoftTokens } from './microsoft-auth';
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import { simpleParser } from 'mailparser';
-import type { Account } from '../schemas/account';
+import type { Account } from '../../../shared/accounts/account';
 import type { DraftInput, FullMessage } from '../schemas/mail';
 import { buildMime } from './mime';
 

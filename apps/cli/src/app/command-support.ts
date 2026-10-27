@@ -1,10 +1,24 @@
 import { Effect, Schema } from 'effect';
+import type {
+  CalendarDataError,
+  CalendarNotFoundError,
+} from '../features/calendar/errors/errors';
+import type {
+  AddressBookNotFoundError,
+  ContactDataError,
+} from '../features/contacts/errors/errors';
 import type { MailError } from '../features/mail/errors/errors';
-import { MailConfig } from '../features/mail/services/config';
 import type { Imap } from '../features/mail/services/imap';
 import type { MicrosoftAuth } from '../features/mail/services/microsoft-auth';
-import type { Secrets } from '../features/mail/services/secrets';
+import { AccountConfig } from '../shared/accounts/config';
+import type { Secrets } from '../shared/accounts/secrets';
 import type { UsageError } from '../shared/command-line';
+import type { Dav, DavSessionError } from '../shared/dav/dav';
+import type {
+  DavAccountsError,
+  DavNotConfiguredError,
+  DavRequestError,
+} from '../shared/errors/dav';
 
 export class FileError extends Schema.TaggedError<FileError>()('FileError', {
   message: Schema.String,
@@ -27,18 +41,29 @@ export const printed = (failed: boolean): Outcome => ({
   failed,
 });
 
-export type CommandError = MailError | UsageError | FileError;
+export type CommandError =
+  | MailError
+  | DavSessionError
+  | DavRequestError
+  | DavNotConfiguredError
+  | DavAccountsError
+  | CalendarDataError
+  | CalendarNotFoundError
+  | ContactDataError
+  | AddressBookNotFoundError
+  | UsageError
+  | FileError;
 
 export type CommandEffect = Effect.Effect<
   Outcome,
   CommandError,
-  MailConfig | Secrets | MicrosoftAuth | Imap
+  AccountConfig | Secrets | MicrosoftAuth | Imap | Dav
 >;
 
 // Accounts match case-insensitively; services and the keyring use the
 // configured spelling.
 export const configuredEmail = (email: string) =>
-  MailConfig.pipe(
+  AccountConfig.pipe(
     Effect.flatMap((config) => config.getAccount(email)),
     Effect.map((account) => account.email),
   );

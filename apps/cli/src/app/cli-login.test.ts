@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import type { Account } from '../features/mail/schemas/account';
 import { Imap } from '../features/mail/services/imap';
 import type { ImapLogin } from '../features/mail/services/imap-client';
 import {
@@ -8,9 +7,12 @@ import {
   MicrosoftAuth,
   type MicrosoftTokens,
 } from '../features/mail/services/microsoft-auth';
-import { Secrets } from '../features/mail/services/secrets';
+import type { Account } from '../shared/accounts/account';
+import { type CredentialKind, Secrets } from '../shared/accounts/secrets';
+import { type Fetch, makeDavClient } from '../shared/dav/client';
+import { Dav } from '../shared/dav/dav';
 import type { HiddenPromptResult } from '../shared/terminal';
-import { loginAccounts } from './cli-login';
+import { loginAccounts, loginSteps } from './cli-login';
 
 const accountFor = (email: string, auth: Account['auth']): Account => ({
   email,
@@ -21,6 +23,16 @@ const accountFor = (email: string, auth: Account['auth']): Account => ({
   user: email,
   auth,
 });
+
+const davAccount: Account = {
+  ...accountFor('me@example.com', 'password'),
+  dav: { url: 'https://dav.example.com/', user: 'me-dav' },
+};
+
+const principalReply = `<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:"><d:response><d:href>/</d:href><d:propstat>
+<d:prop><d:current-user-principal><d:href>/principals/me/</d:href></d:current-user-principal></d:prop>
+<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`;
 
 const device: DeviceCode = {
   deviceCode: 'device-code',
@@ -37,11 +49,14 @@ const runLogin = async (
   options: {
     readonly answer: Effect.Effect<HiddenPromptResult>;
     readonly signIn?: Effect.Effect<MicrosoftTokens>;
+    readonly only?: CredentialKind;
+    readonly davStatus?: number;
   },
 ) => {
   const prompts: Array<string> = [];
   const verified: Array<ImapLogin> = [];
   const stored: Array<string> = [];
+  const davLogins: Array<string | null> = [];
   const prompt = (question: string): Effect.Effect<HiddenPromptResult> =>
     Effect.sync(() => prompts.push(question)).pipe(
       Effect.andThen(options.answer),
@@ -53,24 +68,45 @@ const runLogin = async (
       }),
   } as unknown as typeof Imap.Service;
   const secrets = {
-    setCredential: (_email: string, credential: string) =>
+    setCredential: (kind: CredentialKind, _email: string, credential: string) =>
       Effect.sync(() => {
-        stored.push(credential);
+        stored.push(`${kind}:${credential}`);
       }),
   } as unknown as typeof Secrets.Service;
+  const fetch: Fetch = (_url, init) => {
+    davLogins.push(new Headers(init.headers).get('authorization'));
+    return Promise.resolve(
+      new Response(principalReply, { status: options.davStatus ?? 207 }),
+    );
+  };
+  const dav = {
+    clientWith: (account: Account, password: string) =>
+      Effect.succeed(
+        makeDavClient(
+          {
+            url: account.dav?.url ?? '',
+            user: account.dav?.user ?? '',
+            account: account.email,
+            password,
+          },
+          fetch,
+        ),
+      ),
+  } as unknown as typeof Dav.Service;
   const microsoft = {
     requestDeviceCode: Effect.succeed(device),
     awaitSignIn: () => options.signIn ?? Effect.never,
   } as unknown as typeof MicrosoftAuth.Service;
 
   const succeeded = await Effect.runPromise(
-    loginAccounts(accounts, prompt).pipe(
+    loginAccounts(loginSteps(accounts, options.only), prompt).pipe(
       Effect.provideService(Imap, imap),
       Effect.provideService(Secrets, secrets),
       Effect.provideService(MicrosoftAuth, microsoft),
+      Effect.provideService(Dav, dav),
     ),
   );
-  return { succeeded, prompts, verified, stored };
+  return { succeeded, prompts, verified, stored, davLogins };
 };
 
 describe('loginAccounts', () => {
@@ -84,7 +120,7 @@ describe('loginAccounts', () => {
     );
 
     expect(result.prompts).toEqual([
-      'Password for first@example.com (input hidden): ',
+      'Mail password for first@example.com (input hidden): ',
     ]);
     expect(result.verified).toEqual([]);
     expect(result.stored).toEqual([]);
@@ -104,7 +140,7 @@ describe('loginAccounts', () => {
       'Sign in to Microsoft as me@outlook.com: open https://login.microsoft.com/device and enter the code ABCD1234\nWaiting for sign-in (press Enter to skip): ',
     ]);
     expect(result.verified).toEqual([{ accessToken: 'access' }]);
-    expect(result.stored).toEqual(['refresh']);
+    expect(result.stored).toEqual(['mail:refresh']);
     expect(result.succeeded).toBeTrue();
   });
 
@@ -116,5 +152,58 @@ describe('loginAccounts', () => {
     expect(result.verified).toEqual([]);
     expect(result.stored).toEqual([]);
     expect(result.succeeded).toBeFalse();
+  });
+
+  it('logs in to mail and then DAV, and stores each under its own kind', async () => {
+    const result = await runLogin([davAccount], {
+      answer: Effect.succeed({ _tag: 'entered', value: 'secret' }),
+    });
+
+    expect(result.prompts).toEqual([
+      'Mail password for me@example.com (input hidden): ',
+      'Calendar and contacts password for me@example.com (DAV user me-dav, input hidden): ',
+    ]);
+    expect(result.davLogins).toEqual([
+      `Basic ${Buffer.from('me-dav:secret').toString('base64')}`,
+    ]);
+    expect(result.stored).toEqual(['mail:secret', 'dav:secret']);
+    expect(result.succeeded).toBeTrue();
+  });
+
+  it('does not store a DAV password the server rejects', async () => {
+    const result = await runLogin([davAccount], {
+      answer: Effect.succeed({ _tag: 'entered', value: 'wrong' }),
+      only: 'dav',
+      davStatus: 401,
+    });
+
+    expect(result.prompts).toHaveLength(1);
+    expect(result.stored).toEqual([]);
+    expect(result.succeeded).toBeFalse();
+  });
+});
+
+describe('loginSteps', () => {
+  const mailOnly = accountFor('mail@example.com', 'password');
+
+  it('adds DAV only for accounts that configure it', () => {
+    expect(
+      loginSteps([mailOnly, davAccount], undefined).map(
+        ({ account, service }) => `${account.email} ${service}`,
+      ),
+    ).toEqual([
+      'mail@example.com mail',
+      'me@example.com mail',
+      'me@example.com dav',
+    ]);
+  });
+
+  it('limits the steps to one kind with only', () => {
+    expect(
+      loginSteps([mailOnly, davAccount], 'dav').map(
+        ({ account }) => account.email,
+      ),
+    ).toEqual(['me@example.com']);
+    expect(loginSteps([davAccount], 'mail')).toHaveLength(1);
   });
 });

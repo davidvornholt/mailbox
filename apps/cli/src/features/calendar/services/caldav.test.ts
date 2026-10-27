@@ -1,0 +1,138 @@
+import { describe, expect, it } from 'bun:test';
+import { Effect } from 'effect';
+import {
+  davResponse,
+  discoveryRoutes,
+  fakeDavServer,
+  multistatus,
+} from '../../../shared/dav/dav-server.fixture';
+import { fetchCalendarObject, listCalendars, queryEvents } from './caldav';
+import { windowOf } from './ical.fixture';
+
+const calendarType =
+  '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>';
+const privileges = (...names: ReadonlyArray<string>) =>
+  `<d:current-user-privilege-set>${names.map((name) => `<d:privilege><d:${name}/></d:privilege>`).join('')}</d:current-user-privilege-set>`;
+const components = (...names: ReadonlyArray<string>) =>
+  `<c:supported-calendar-component-set>${names.map((name) => `<c:comp name="${name}"/>`).join('')}</c:supported-calendar-component-set>`;
+
+const home = multistatus(
+  davResponse(
+    '/calendars/me/',
+    '<d:resourcetype><d:collection/></d:resourcetype>',
+  ),
+  davResponse(
+    '/calendars/me/work/',
+    `${calendarType}<d:displayname>Work</d:displayname><ical:calendar-color>#ff0000</ical:calendar-color>${components('VEVENT', 'VTODO')}${privileges('read', 'write')}`,
+  ),
+  davResponse(
+    '/calendars/me/shared%20team/',
+    `${calendarType}${privileges('read')}`,
+  ),
+  davResponse(
+    '/calendars/me/tasks/',
+    `${calendarType}<d:displayname>Tasks</d:displayname>${components('VTODO')}`,
+  ),
+  davResponse(
+    '/calendars/me/inbox/',
+    '<d:resourcetype><d:collection/><c:schedule-inbox/></d:resourcetype>',
+  ),
+);
+
+describe('listCalendars', () => {
+  it('lists the event calendars in the calendar home', async () => {
+    const { client, requests } = fakeDavServer({
+      ...discoveryRoutes,
+      'PROPFIND /calendars/me/': { body: home },
+    });
+    const calendars = await Effect.runPromise(listCalendars(client));
+    expect(calendars).toEqual([
+      {
+        account: 'me@example.com',
+        href: '/calendars/me/work/',
+        name: 'Work',
+        color: '#ff0000',
+        writable: true,
+      },
+      {
+        account: 'me@example.com',
+        href: '/calendars/me/shared%20team/',
+        name: 'shared team',
+        writable: false,
+      },
+    ]);
+    expect(requests.at(-1)?.depth).toBe('1');
+  });
+
+  it('reports a server without calendars', async () => {
+    const { client } = fakeDavServer({
+      ...discoveryRoutes,
+      'PROPFIND /principals/me/': {
+        body: multistatus(
+          davResponse('/principals/me/', '<d:displayname>Me</d:displayname>'),
+        ),
+      },
+    });
+    const error = await Effect.runPromise(Effect.flip(listCalendars(client)));
+    expect(error.message).toContain('offers no calendars');
+  });
+});
+
+describe('queryEvents', () => {
+  it('asks for the events in the window in UTC', async () => {
+    const { client, requests } = fakeDavServer({
+      'REPORT /calendars/me/work/': {
+        body: multistatus(
+          davResponse(
+            '/calendars/me/work/a.ics',
+            '<d:getetag>"a1"</d:getetag><c:calendar-data>BEGIN:VCALENDAR\r\nEND:VCALENDAR</c:calendar-data>',
+          ),
+          davResponse(
+            '/calendars/me/work/b.ics',
+            '<d:getetag>"b1"</d:getetag>',
+          ),
+        ),
+      },
+    });
+    const resources = await Effect.runPromise(
+      queryEvents(
+        client,
+        '/calendars/me/work/',
+        windowOf('2026-10-26T23:00:00Z', '2026-11-02T23:00:00Z'),
+      ),
+    );
+    expect(resources).toEqual([
+      {
+        href: '/calendars/me/work/a.ics',
+        etag: '"a1"',
+        // XML parsing turns the CRLF line breaks into LF.
+        ics: 'BEGIN:VCALENDAR\nEND:VCALENDAR',
+      },
+    ]);
+    expect(requests[0]?.depth).toBe('1');
+    expect(requests[0]?.body).toContain(
+      '<c:time-range start="20261026T230000Z" end="20261102T230000Z"/>',
+    );
+  });
+});
+
+describe('fetchCalendarObject', () => {
+  it('returns the event data with its ETag', async () => {
+    const { client } = fakeDavServer({
+      'GET /calendars/me/work/a.ics': {
+        status: 200,
+        body: 'BEGIN:VCALENDAR',
+        headers: { etag: '"a2"' },
+      },
+    });
+    expect(
+      await Effect.runPromise(
+        fetchCalendarObject(client, '/calendars/me/work/a.ics'),
+      ),
+    ).toEqual({
+      href: '/calendars/me/work/a.ics',
+      etag: '"a2"',
+      ics: 'BEGIN:VCALENDAR',
+    });
+  });
+});

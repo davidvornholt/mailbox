@@ -1,11 +1,11 @@
 import { Duration, Effect, Exit, Fiber, Ref } from 'effect';
 import { ImapFlow } from 'imapflow';
+import type { Account } from '../../../shared/accounts/account';
 import {
   AccountSearchTimeoutError,
   ImapError,
   type MailError,
 } from '../errors/errors';
-import type { Account } from '../schemas/account';
 
 export type WarmClient = {
   usable: boolean;

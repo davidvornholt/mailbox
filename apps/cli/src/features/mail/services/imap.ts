@@ -1,4 +1,6 @@
 import { Context, Effect, Layer } from 'effect';
+import { AccountConfig } from '../../../shared/accounts/config';
+import { Secrets } from '../../../shared/accounts/secrets';
 import type { MailError } from '../errors/errors';
 import type {
   AttachmentContent,
@@ -15,7 +17,6 @@ import type {
 } from '../schemas/mail';
 import { searchAccounts } from './account-search';
 import { readAttachment } from './attachment';
-import { MailConfig } from './config';
 import { removeDraft, replaceDraft, writeDraft } from './draft';
 import { tagDrafts } from './draft-tags';
 import {
@@ -32,7 +33,6 @@ import { searchMailboxes } from './imap-search';
 import { makeWarmClientCache } from './imap-warm-cache';
 import { imapLoginFor } from './login';
 import { MicrosoftAuth } from './microsoft-auth';
-import { Secrets } from './secrets';
 
 export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
   account: string,
@@ -56,12 +56,13 @@ export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
 // a command that touches an account several times (such as a reply draft that
 // reads its source first) logs in once. The scope finalizer closes them.
 const makeImap = Effect.gen(function* () {
-  const config = yield* MailConfig;
+  const config = yield* AccountConfig;
   const secrets = yield* Secrets;
   const microsoft = yield* MicrosoftAuth;
   const credentials = {
-    get: secrets.getCredential,
-    store: secrets.setCredential,
+    get: (email: string) => secrets.getCredential('mail', email),
+    store: (email: string, credential: string) =>
+      secrets.setCredential('mail', email, credential),
     refresh: microsoft.refresh,
   } as const;
   const { clientFor, closeAll } = yield* makeWarmClientCache((email: string) =>
@@ -167,6 +168,6 @@ export class Imap extends Context.Service<
   Effect.Success<typeof makeImap>
 >()('mail/Imap') {
   static readonly layer = Layer.effect(Imap, makeImap).pipe(
-    Layer.provide([MailConfig.layer, Secrets.layer, MicrosoftAuth.layer]),
+    Layer.provide([AccountConfig.layer, Secrets.layer, MicrosoftAuth.layer]),
   );
 }

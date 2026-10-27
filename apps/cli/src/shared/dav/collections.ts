@@ -1,0 +1,50 @@
+import { Result } from 'effect';
+
+// A calendar or address book, as the commands name it.
+export type NamedCollection = {
+  readonly href: string;
+  readonly name: string;
+};
+
+const trailingSlashes = /\/*$/u;
+
+// The decoded path of an href, with one trailing slash, so that hrefs from
+// the command line and from the server compare equal.
+export const collectionPath = (href: string): string =>
+  decodeURIComponent(
+    URL.parse(href, 'https://dav.invalid')?.pathname ?? href,
+  ).replace(trailingSlashes, '/');
+
+export const lastSegment = (href: string): string =>
+  decodeURIComponent(
+    href.replace(trailingSlashes, '').split('/').at(-1) ?? href,
+  );
+
+// Finds a collection by its href or, case-insensitively, by its name.
+export const findCollection = <C extends NamedCollection>(
+  collections: ReadonlyArray<C>,
+  wanted: string,
+): Result.Result<C, 'ambiguous' | 'missing'> => {
+  const byHref = collections.find(
+    (collection) => collectionPath(collection.href) === collectionPath(wanted),
+  );
+  if (byHref !== undefined) {
+    return Result.succeed(byHref);
+  }
+  const name = wanted.trim().toLowerCase();
+  const byName = collections.filter(
+    (collection) => collection.name.toLowerCase() === name,
+  );
+  const [found] = byName;
+  if (found === undefined) {
+    return Result.fail('missing');
+  }
+  return byName.length === 1 ? Result.succeed(found) : Result.fail('ambiguous');
+};
+
+export const describeCollections = (
+  collections: ReadonlyArray<NamedCollection>,
+): string =>
+  collections
+    .map((collection) => `${collection.name} (${collection.href})`)
+    .join(', ');
