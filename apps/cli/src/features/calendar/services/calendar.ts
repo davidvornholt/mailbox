@@ -96,7 +96,7 @@ const readEvent = <A>(
     catch: (cause) =>
       new CalendarDataError({
         href,
-        message: `Could not read ${href}: ${String(cause)}`,
+        message: `Could not read ${href}: ${cause instanceof Error ? cause.message : String(cause)}`,
       }),
   });
 

@@ -89,7 +89,7 @@ const readContact = <A>(
     catch: (cause) =>
       new ContactDataError({
         href,
-        message: `Could not read ${href}: ${String(cause)}`,
+        message: `Could not read ${href}: ${cause instanceof Error ? cause.message : String(cause)}`,
       }),
   });
 

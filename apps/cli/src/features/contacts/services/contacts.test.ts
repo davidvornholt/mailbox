@@ -126,7 +126,7 @@ describe('accountContacts', () => {
         account: 'me@example.com',
         errorTag: 'ContactDataError',
         message:
-          'Could not read /addressbooks/me/contacts/e.vcf: Error: Could not extract integer from "ar"',
+          'Could not read /addressbooks/me/contacts/e.vcf: Could not extract integer from "ar"',
       },
     ]);
     expect(requests.at(-1)?.body).toContain('<card:filter/>');
