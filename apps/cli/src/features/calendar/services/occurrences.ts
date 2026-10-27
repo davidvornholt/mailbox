@@ -1,6 +1,6 @@
 import type { DateTime } from 'effect';
 import ICAL from 'ical.js';
-import { instantOf, type TimeWindow } from './ical-time';
+import { instantOf, registerIanaZones, type TimeWindow } from './ical-time';
 
 // One occurrence of an event: the event itself, or one instance of a
 // recurring event, drawn from the override that changed it if there is one.
@@ -222,6 +222,7 @@ export const occurrencesIn = (
   window: TimeWindow,
   local: DateTime.TimeZone,
 ): ReadonlyArray<Occurrence> => {
+  registerIanaZones(vcalendar);
   const vevents = vcalendar.getAllSubcomponents('vevent');
   const isOverride = (component: ICAL.Component) =>
     component.hasProperty('recurrence-id');

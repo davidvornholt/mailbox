@@ -36,10 +36,66 @@ const zonedMillis = (parts: Parts, zone: DateTime.TimeZone): number =>
 
 const millisPerSecond = 1000;
 
+const partsOf = (time: ICAL.Time): Parts => ({
+  year: time.year,
+  month: time.month,
+  day: time.day,
+  hour: time.isDate ? 0 : time.hour,
+  minute: time.isDate ? 0 : time.minute,
+  second: time.isDate ? 0 : time.second,
+});
+
+// A zone whose offsets come from the runtime's time zone database.
+class IanaZone extends ICAL.Timezone {
+  readonly #zone: DateTime.TimeZone;
+
+  constructor(tzid: string, zone: DateTime.TimeZone) {
+    super({ tzid });
+    this.#zone = zone;
+  }
+
+  override utcOffset(time: ICAL.Time): number {
+    const parts = partsOf(time);
+    const asUtc = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+    );
+    return (asUtc - zonedMillis(parts, this.#zone)) / millisPerSecond;
+  }
+}
+
+// ical.js leaves a time floating when its TZID has no VTIMEZONE in the
+// calendar data, and so compares it wrongly with UNTIL, EXDATE, and
+// RECURRENCE-ID values in UTC. It falls back to the zones registered with
+// its TimezoneService, so this registers each IANA zone the calendar names.
+// ical.js reads values lazily, so this must run before any time is read.
+export const registerIanaZones = (vcalendar: ICAL.Component): void => {
+  for (const component of vcalendar.getAllSubcomponents()) {
+    for (const property of component.getAllProperties()) {
+      const tzid = property.getParameter('tzid');
+      // Unlike has(), get() first sets up ical.js's own UTC zone, which
+      // this mustn't replace.
+      if (
+        typeof tzid === 'string' &&
+        ICAL.TimezoneService.get(tzid) === undefined
+      ) {
+        const named = DateTime.zoneMakeNamed(tzid);
+        if (Option.isSome(named)) {
+          ICAL.TimezoneService.register(new IanaZone(tzid, named.value), tzid);
+        }
+      }
+    }
+  }
+};
+
 const isUtc = (time: ICAL.Time): boolean => time.zone?.tzid === 'UTC';
 
-// ical.js resolves a TZID only when the calendar data embeds its VTIMEZONE;
-// otherwise the time is left floating.
+// ical.js resolves a TZID outside the IANA database only when the calendar
+// data embeds its VTIMEZONE; otherwise the time is left floating.
 const hasResolvedZone = (time: ICAL.Time): boolean =>
   time.zone !== undefined &&
   time.zone.tzid !== 'floating' &&
@@ -57,14 +113,7 @@ export const instantOf = (
   if (!time.isDate && isUtc(time)) {
     return time.toUnixTime() * millisPerSecond;
   }
-  const parts: Parts = {
-    year: time.year,
-    month: time.month,
-    day: time.day,
-    hour: time.isDate ? 0 : time.hour,
-    minute: time.isDate ? 0 : time.minute,
-    second: time.isDate ? 0 : time.second,
-  };
+  const parts = partsOf(time);
   const named =
     time.isDate || tzid === undefined
       ? Option.none()

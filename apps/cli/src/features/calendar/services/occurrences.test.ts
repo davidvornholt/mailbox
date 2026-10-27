@@ -29,6 +29,16 @@ describe('occurrencesIn for a series', () => {
     expect(found.map(({ endMs, startMs }) => endMs - startMs)).toEqual([
       3_600_000, 3_600_000, 3_600_000,
     ]);
+    // A UTC UNTIL on the last occurrence includes it, although the data
+    // doesn't embed the Berlin VTIMEZONE.
+    const until = weeklySeries.map((line) =>
+      line.startsWith('RRULE:')
+        ? 'RRULE:FREQ=WEEKLY;UNTIL=20261103T090000Z'
+        : line,
+    );
+    expect(
+      starts(occurrencesIn(vcalendarOf(...until), october, berlin)),
+    ).toEqual(starts(found));
   });
 
   it('leaves out excluded occurrences', () => {
@@ -84,7 +94,9 @@ describe('occurrencesIn for a series', () => {
     );
     expect(starts(found)).toEqual(['2026-10-22T08:00:00.000Z']);
   });
+});
 
+describe('occurrencesIn for a series it cannot expand', () => {
   it('throws rather than stop a series too long to expand', () => {
     const minutely = vcalendarOf(
       ...vevent(
