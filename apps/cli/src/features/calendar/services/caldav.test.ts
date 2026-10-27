@@ -64,6 +64,58 @@ describe('listCalendars', () => {
     expect(requests.at(-1)?.depth).toBe('1');
   });
 
+  it.each([
+    [
+      'a home that is itself a calendar',
+      ['/calendars/me/work/'],
+      {
+        'PROPFIND /calendars/me/work/': {
+          body: multistatus(
+            davResponse('/calendars/me/work/', calendarType),
+            davResponse('/calendars/me/work/a.ics', '<d:resourcetype/>'),
+          ),
+        },
+      },
+      ['/calendars/me/work/'],
+    ],
+    [
+      'two homes',
+      ['/calendars/me/', '/calendars/team/'],
+      {
+        'PROPFIND /calendars/me/': { body: home },
+        'PROPFIND /calendars/team/': {
+          body: multistatus(
+            davResponse(
+              '/calendars/team/',
+              '<d:resourcetype><d:collection/></d:resourcetype>',
+            ),
+            davResponse('/calendars/team/plans/', calendarType),
+          ),
+        },
+      },
+      [
+        '/calendars/me/work/',
+        '/calendars/me/shared%20team/',
+        '/calendars/team/plans/',
+      ],
+    ],
+  ])('lists the calendars of %s', async (_, homes, routes, hrefs) => {
+    const { client } = fakeDavServer({
+      ...discoveryRoutes,
+      'PROPFIND /principals/me/': {
+        body: multistatus(
+          davResponse(
+            '/principals/me/',
+            `<c:calendar-home-set>${homes.map((href) => `<d:href>${href}</d:href>`).join('')}</c:calendar-home-set>`,
+          ),
+        ),
+      },
+      ...routes,
+    });
+    const calendars = await Effect.runPromise(listCalendars(client));
+    expect(calendars.map(({ href }) => href)).toEqual(hrefs);
+  });
+
   it('reports a server without calendars', async () => {
     const { client } = fakeDavServer({
       ...discoveryRoutes,

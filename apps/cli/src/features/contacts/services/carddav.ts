@@ -28,14 +28,14 @@ export const listAddressBooks = (
 ): Effect.Effect<ReadonlyArray<AddressBook>, DavRequestError> =>
   Effect.gen(function* () {
     const principal = yield* discoverPrincipal(client);
-    if (principal.addressBookHome === undefined) {
+    if (principal.addressBookHomes.length === 0) {
       return yield* new DavError({
         message: `The DAV server of ${client.login.account} offers no contacts (it names no addressbook-home-set)`,
       });
     }
     const collections = yield* listCollections(
       client,
-      principal.addressBookHome,
+      principal.addressBookHomes,
       '<d:resourcetype/><d:displayname/><card:addressbook-description/>',
     );
     return collections

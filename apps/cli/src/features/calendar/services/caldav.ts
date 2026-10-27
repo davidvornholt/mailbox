@@ -78,14 +78,14 @@ export const listCalendars = (
 ): Effect.Effect<ReadonlyArray<Calendar>, DavRequestError> =>
   Effect.gen(function* () {
     const principal = yield* discoverPrincipal(client);
-    if (principal.calendarHome === undefined) {
+    if (principal.calendarHomes.length === 0) {
       return yield* new DavError({
         message: `The DAV server of ${client.login.account} offers no calendars (it names no calendar-home-set)`,
       });
     }
     const collections = yield* listCollections(
       client,
-      principal.calendarHome,
+      principal.calendarHomes,
       calendarProps,
     );
     return collections

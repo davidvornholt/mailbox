@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Array as Arr, Effect } from 'effect';
 import { DavError, type DavRequestError } from '../errors/dav';
 import type { DavClient } from './client';
 import { collectionPath } from './collections';
@@ -7,8 +7,9 @@ import { type DavResource, ns, propHrefs, propText } from './xml';
 export type Principal = {
   readonly href: string;
   readonly displayName: string | undefined;
-  readonly calendarHome: string | undefined;
-  readonly addressBookHome: string | undefined;
+  // A user may have several homes (RFC 4791, section 6.2.1).
+  readonly calendarHomes: ReadonlyArray<string>;
+  readonly addressBookHomes: ReadonlyArray<string>;
   // Addresses the server treats as this user in invitations, such as
   // mailto:me@example.com, as bare emails.
   readonly addresses: ReadonlyArray<string>;
@@ -51,14 +52,14 @@ export const discoverPrincipal = (
         principal === undefined
           ? undefined
           : propText(principal, ns.dav, 'displayname'),
-      calendarHome:
+      calendarHomes:
         principal === undefined
-          ? undefined
-          : propHrefs(principal, ns.caldav, 'calendar-home-set')[0],
-      addressBookHome:
+          ? []
+          : propHrefs(principal, ns.caldav, 'calendar-home-set'),
+      addressBookHomes:
         principal === undefined
-          ? undefined
-          : propHrefs(principal, ns.carddav, 'addressbook-home-set')[0],
+          ? []
+          : propHrefs(principal, ns.carddav, 'addressbook-home-set'),
       addresses:
         principal === undefined
           ? []
@@ -72,17 +73,19 @@ export const discoverPrincipal = (
     };
   });
 
-// The collections directly inside a home collection, without the home itself.
+// The homes and the collections directly inside them, each once. A home can
+// itself be a calendar or an address book, so callers filter by resource type.
 export const listCollections = (
   client: DavClient,
-  home: string,
+  homes: ReadonlyArray<string>,
   props: string,
 ): Effect.Effect<ReadonlyArray<DavResource>, DavRequestError> =>
-  client.propfind(home, '1', props).pipe(
-    Effect.map((resources) => {
-      const homePath = collectionPath(home);
-      return resources.filter(
-        (resource) => collectionPath(resource.href) !== homePath,
-      );
-    }),
+  Effect.forEach(homes, (home) => client.propfind(home, '1', props)).pipe(
+    Effect.map((listings) =>
+      Arr.dedupeWith(
+        listings.flat(),
+        (left, right) =>
+          collectionPath(left.href) === collectionPath(right.href),
+      ),
+    ),
   );

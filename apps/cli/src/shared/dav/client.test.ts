@@ -95,8 +95,8 @@ describe('discoverPrincipal', () => {
     expect(principal).toEqual({
       href: '/principals/me/',
       displayName: undefined,
-      calendarHome: '/calendars/me/',
-      addressBookHome: undefined,
+      calendarHomes: ['/calendars/me/'],
+      addressBookHomes: [],
       addresses: ['me+work@example.com'],
     });
     expect(requests.map(({ method, depth }) => `${method} ${depth}`)).toEqual([
