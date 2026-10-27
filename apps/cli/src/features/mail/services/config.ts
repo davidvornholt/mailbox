@@ -2,9 +2,9 @@ import { Context, Effect, Layer, Result } from 'effect';
 import { ConfigError, UnknownAccountError } from '../errors/errors';
 import { type Account, decodeAccounts, findAccount } from '../schemas/account';
 
-// MAILBOX_CONFIG overrides the XDG location (tests point it at fixtures).
+// PIM_CONFIG overrides the XDG location (tests point it at fixtures).
 const resolveConfigPath = (): Effect.Effect<string, ConfigError> => {
-  const override = Bun.env.MAILBOX_CONFIG;
+  const override = Bun.env.PIM_CONFIG;
   if (override !== undefined && override !== '') {
     return Effect.succeed(override);
   }
@@ -15,14 +15,14 @@ const resolveConfigPath = (): Effect.Effect<string, ConfigError> => {
     ? Effect.fail(
         new ConfigError({
           message:
-            'Cannot locate the account config: set MAILBOX_CONFIG, XDG_CONFIG_HOME, or HOME.',
+            'Cannot locate the account config: set PIM_CONFIG, XDG_CONFIG_HOME, or HOME.',
         }),
       )
-    : Effect.succeed(`${configHome}/mailbox/accounts.toml`);
+    : Effect.succeed(`${configHome}/pim/accounts.toml`);
 };
 
 const missingConfigMessage = (path: string): string =>
-  `No account config at ${path}. Create it with one [[accounts]] block per account containing email, name, and host (port defaults to 993, secure to true, user to the email), then run: mailbox login`;
+  `No account config at ${path}. Create it with one [[accounts]] block per account containing email, name, and host (port defaults to 993, secure to true, user to the email), then run: pim login`;
 
 const loadAccounts = Effect.gen(function* () {
   const path = yield* resolveConfigPath();

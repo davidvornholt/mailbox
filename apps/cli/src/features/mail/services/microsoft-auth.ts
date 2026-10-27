@@ -1,7 +1,7 @@
 import { Context, Duration, Effect, Layer, Result, Schema } from 'effect';
 import { OAuthError } from '../errors/errors';
 
-// Microsoft issues tokens only to registered apps. mailbox borrows Mozilla
+// Microsoft issues tokens only to registered apps. pim borrows Mozilla
 // Thunderbird's public client ID, which works for personal and most work or
 // school accounts without an app registration of its own, so Microsoft's
 // consent screen names Thunderbird.
@@ -219,7 +219,7 @@ const awaitSignIn = (
         Effect.fail(
           new OAuthError({
             message:
-              'The sign-in code expired before sign-in finished. Run mailbox login again.',
+              'The sign-in code expired before sign-in finished. Run pim login again.',
           }),
         ),
     }),
@@ -250,7 +250,7 @@ const refresh = (
             new OAuthError({
               message:
                 failure.error === 'invalid_grant'
-                  ? `Microsoft rejected the stored sign-in for ${account}: ${failure.description} Ask the user to run: mailbox login --account ${account}`
+                  ? `Microsoft rejected the stored sign-in for ${account}: ${failure.description} Ask the user to run: pim login --account ${account}`
                   : `Microsoft token refresh for ${account} failed: ${failure.description}`,
             }),
           ),

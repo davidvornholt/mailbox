@@ -3,8 +3,11 @@ import { Context, Effect, Layer } from 'effect';
 import { KeyringError, MissingCredentialsError } from '../errors/errors';
 import { keyringService } from '../schemas/account';
 
-// Each account keeps one credential in the keyring: its IMAP password, or the
-// refresh token of its Microsoft sign-in.
+// Each account keeps its mail credential in the keyring under mail:<email>:
+// its IMAP password, or the refresh token of its Microsoft sign-in.
+const mailEntry = (account: string): Entry =>
+  new Entry(keyringService, `mail:${account}`);
+
 export class Secrets extends Context.Service<
   Secrets,
   {
@@ -24,7 +27,7 @@ export class Secrets extends Context.Service<
         account: string,
       ): Effect.Effect<string, MissingCredentialsError | KeyringError> =>
         Effect.try({
-          try: () => new Entry(keyringService, account).getPassword(),
+          try: () => mailEntry(account).getPassword(),
           catch: (cause) =>
             new KeyringError({
               message: `keyring read failed for ${account}: ${String(cause)}`,
@@ -35,7 +38,7 @@ export class Secrets extends Context.Service<
               ? Effect.fail(
                   new MissingCredentialsError({
                     account,
-                    message: `No stored credentials for ${account}. Ask the user to run: mailbox login --account ${account}`,
+                    message: `No stored credentials for ${account}. Ask the user to run: pim login --account ${account}`,
                   }),
                 )
               : Effect.succeed(credential),
@@ -47,7 +50,7 @@ export class Secrets extends Context.Service<
       ): Effect.Effect<void, KeyringError> =>
         Effect.try({
           try: () => {
-            new Entry(keyringService, account).setPassword(credential);
+            mailEntry(account).setPassword(credential);
           },
           catch: (cause) =>
             new KeyringError({

@@ -1,3 +1,3 @@
-# Build mailbox and install it with its agent skill for the current user
+# Build pim and install it with its agent skills for the current user
 install:
-    bun run --filter @mailbox/cli install:user
+    bun run --filter @pim/cli install:user

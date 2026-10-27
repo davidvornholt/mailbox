@@ -5,8 +5,8 @@ import { MailConfig } from './config';
 const fixturePath = Bun.fileURLToPath(
   new URL('./accounts.fixture.toml', import.meta.url),
 );
-const tempDir = `${Bun.env.TMPDIR ?? '/tmp'}/mailbox-config-test-${crypto.randomUUID()}`;
-const environmentKeys = ['MAILBOX_CONFIG', 'XDG_CONFIG_HOME'] as const;
+const tempDir = `${Bun.env.TMPDIR ?? '/tmp'}/pim-config-test-${crypto.randomUUID()}`;
+const environmentKeys = ['PIM_CONFIG', 'XDG_CONFIG_HOME'] as const;
 const savedEnvironment = environmentKeys.map(
   (key) => [key, Bun.env[key]] as const,
 );
@@ -41,7 +41,7 @@ const failureMessage = async () => {
 
 describe('MailConfig', () => {
   it('resolves an account case-insensitively to its configured spelling', async () => {
-    Bun.env.MAILBOX_CONFIG = fixturePath;
+    Bun.env.PIM_CONFIG = fixturePath;
     const result = await loadWith(getAccount('TEST@example.com'));
     expect(result).toMatchObject({
       _tag: 'Success',
@@ -50,10 +50,10 @@ describe('MailConfig', () => {
   });
 
   it('reads accounts.toml under XDG_CONFIG_HOME when no override is set', async () => {
-    Bun.env.MAILBOX_CONFIG = '';
+    Bun.env.PIM_CONFIG = '';
     Bun.env.XDG_CONFIG_HOME = tempDir;
     expect(await failureMessage()).toContain(
-      `No account config at ${tempDir}/mailbox/accounts.toml`,
+      `No account config at ${tempDir}/pim/accounts.toml`,
     );
   });
 
@@ -66,9 +66,9 @@ describe('MailConfig', () => {
       '[[accounts]]\nemail = "a@b.com"\nname = "A"\nhots = "x"\n',
     );
 
-    Bun.env.MAILBOX_CONFIG = invalidToml;
+    Bun.env.PIM_CONFIG = invalidToml;
     expect(await failureMessage()).toContain('is not valid TOML');
-    Bun.env.MAILBOX_CONFIG = invalidSchema;
+    Bun.env.PIM_CONFIG = invalidSchema;
     const schemaMessage = await failureMessage();
     expect(schemaMessage).toContain(
       `Invalid account config at ${invalidSchema}`,

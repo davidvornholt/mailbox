@@ -124,7 +124,7 @@ const draftContent = (
 
 const saveDraft = defineCommand(
   {
-    name: 'draft save',
+    name: 'mail draft save',
     summary: 'Save a new draft (body on stdin)',
     description: `Save a new draft to the account's drafts folder and print its handle. ${composeDescription}`,
     flags: { account, ...composeFlags },
@@ -141,7 +141,7 @@ const saveDraft = defineCommand(
 
 const updateDraft = defineCommand(
   {
-    name: 'draft update',
+    name: 'mail draft update',
     summary: 'Replace a draft (body on stdin)',
     description: `Replace a draft with new content and print the new handle; the old uid stops working. Every field is replaced, so pass all recipients and the subject again. Bcc is kept unless --bcc is given (--bcc '' removes it). ${composeDescription}`,
     flags: { ...handleFlags, ...composeFlags },
@@ -163,7 +163,7 @@ const updateDraft = defineCommand(
 
 const deleteDraft = defineCommand(
   {
-    name: 'draft delete',
+    name: 'mail draft delete',
     summary: 'Delete a draft',
     description:
       'Permanently delete one draft. Only messages in the drafts folder can be deleted.',
@@ -181,7 +181,7 @@ const deleteDraft = defineCommand(
 
 const tagDrafts = defineCommand(
   {
-    name: 'draft tag',
+    name: 'mail draft tag',
     summary: 'Add an IMAP keyword to drafts',
     description:
       'Add an IMAP keyword to drafts in one drafts folder, such as a mail client label ($label1 is "Important" in Thunderbird). Submission keywords such as $Submitted are refused.',

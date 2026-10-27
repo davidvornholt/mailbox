@@ -1,5 +1,5 @@
 {
-  description = "mailbox development environment";
+  description = "pim development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 

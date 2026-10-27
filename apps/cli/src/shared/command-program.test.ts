@@ -12,17 +12,21 @@ const show = defineCommand(
 );
 const tag = defineCommand(
   {
-    name: 'draft tag',
+    name: 'mail draft tag',
     summary: 'Tag drafts',
     flags: { uid: flag.integers('n', 'Draft uid') },
   },
+  (values) => values,
+);
+const read = defineCommand(
+  { name: 'mail read', summary: 'Read a message', flags: {} },
   (values) => values,
 );
 const program: Program<unknown> = {
   name: 'tool',
   summary: 'tool: test program',
   footer: 'Footer text',
-  commands: [show, tag],
+  commands: [show, tag, read],
 };
 
 describe('resolve', () => {
@@ -39,22 +43,53 @@ describe('resolve', () => {
 
   it('prints command help for "help <command>" and "<command> --help"', () => {
     const expected = { _tag: 'Help' as const, text: tag.help('tool') };
-    expect(resolve(program, ['help', 'draft', 'tag'])).toEqual(expected);
-    expect(resolve(program, ['draft', 'tag', '--help'])).toEqual(expected);
+    expect(resolve(program, ['help', 'mail', 'draft', 'tag'])).toEqual(
+      expected,
+    );
+    expect(resolve(program, ['mail', 'draft', 'tag', '--help'])).toEqual(
+      expected,
+    );
   });
 
-  it('prints a group overview for a command prefix', () => {
-    const resolution = resolve(program, ['draft']);
-    expect(resolution._tag === 'Help' && resolution.text).toContain(
-      'draft tag',
-    );
-    expect(resolution._tag === 'Help' && resolution.text).not.toContain('show');
+  const helpOf = (argv: ReadonlyArray<string>): string => {
+    const resolution = resolve(program, argv);
+    return resolution._tag === 'Help' ? resolution.text : '';
+  };
+
+  it.each([[['mail']], [['mail', '--help']], [['help', 'mail']]])(
+    'prints a group overview for %p',
+    (argv) => {
+      const text = helpOf(argv);
+      expect(text).toContain('mail draft tag');
+      expect(text).toContain('mail read');
+      expect(text).not.toContain('show');
+    },
+  );
+
+  it.each([
+    [['mail', 'draft']],
+    [['mail', 'draft', '-h']],
+    [['help', 'mail', 'draft']],
+  ])('prints a nested group overview for %p', (argv) => {
+    const text = helpOf(argv);
+    expect(text).toContain('mail draft tag');
+    expect(text).not.toContain('mail read');
   });
 
   it('rejects unknown commands and invalid arguments with usage', () => {
-    expect(resolve(program, ['draft', 'send'])).toMatchObject({
+    expect(resolve(program, ['mail', 'draft', 'send'])).toMatchObject({
       _tag: 'Invalid',
-      error: { message: 'unknown command "draft send"; run: tool --help' },
+      error: {
+        message: 'unknown command "mail draft send"; run: tool --help',
+      },
+    });
+    expect(resolve(program, ['mail', 'send', '--help'])).toMatchObject({
+      _tag: 'Invalid',
+      error: { message: 'unknown command "mail send"; run: tool --help' },
+    });
+    expect(resolve(program, ['send'])).toMatchObject({
+      _tag: 'Invalid',
+      error: { message: 'unknown command "send"; run: tool --help' },
     });
     expect(resolve(program, ['show'])).toMatchObject({
       _tag: 'Invalid',
@@ -67,7 +102,9 @@ describe('resolve', () => {
 
   it('runs a command with parsed values', () => {
     const uid = 3;
-    expect(resolve(program, ['draft', 'tag', '--uid', String(uid)])).toEqual({
+    expect(
+      resolve(program, ['mail', 'draft', 'tag', '--uid', String(uid)]),
+    ).toEqual({
       _tag: 'Run',
       value: { uid: [uid] },
     });

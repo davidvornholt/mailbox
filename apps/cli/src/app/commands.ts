@@ -16,7 +16,7 @@ import {
 } from './command-support';
 import { draftCommands } from './draft-commands';
 
-const account = flag.text('email', 'Account email from "mailbox accounts"');
+const account = flag.text('email', 'Account email from "pim accounts"');
 const optionalAccount = (description: string) =>
   flag.optionalText('email', description);
 const messageFlags = {
@@ -88,7 +88,7 @@ const login = defineCommand(
       if (!stdinIsTerminal()) {
         return yield* new UsageError({
           message:
-            'mailbox login needs an interactive terminal; ask the user to run it',
+            'pim login needs an interactive terminal; ask the user to run it',
         });
       }
       const selected = yield* selectedAccounts(values.account);
@@ -99,7 +99,7 @@ const login = defineCommand(
 
 const folders = defineCommand(
   {
-    name: 'folders',
+    name: 'mail folders',
     summary: 'List the folders of an account',
     flags: { account },
   },
@@ -113,7 +113,7 @@ const folders = defineCommand(
 
 const search = defineCommand(
   {
-    name: 'search',
+    name: 'mail search',
     summary: 'Search messages, newest first',
     description:
       'Search messages, newest first, across all accounts unless --account is given. Without --folder, each account searches its all-mail folder, or else every folder except Drafts, Junk, and Trash. Each hit has an account, folder, uid, and uidValidity. Accounts that fail are listed under "failures" beside the other hits.',
@@ -135,7 +135,7 @@ const search = defineCommand(
     Effect.gen(function* () {
       if (subtree && folder === undefined) {
         return yield* new UsageError({
-          message: 'mailbox search: --subtree needs --folder',
+          message: 'pim mail search: --subtree needs --folder',
         });
       }
       const email =
@@ -154,10 +154,10 @@ const search = defineCommand(
 
 const read = defineCommand(
   {
-    name: 'read',
+    name: 'mail read',
     summary: 'Read a message',
     description:
-      'Print one message: headers, plain-text body, and attachments. Reading does not mark the message as read. Attachment sizes count encoded bytes, so they overstate the saved file. Save an attachment with "mailbox attachment" and its part.',
+      'Print one message: headers, plain-text body, and attachments. Reading does not mark the message as read. Attachment sizes count encoded bytes, so they overstate the saved file. Save an attachment with "pim mail attachment" and its part.',
     flags: {
       ...messageFlags,
       html: flag.switch('Include the HTML body'),
@@ -182,11 +182,11 @@ const read = defineCommand(
 
 const attachment = defineCommand(
   {
-    name: 'attachment',
+    name: 'mail attachment',
     summary: 'Save an attachment to a file',
     flags: {
       ...messageFlags,
-      part: flag.text('part', 'Attachment part from "mailbox read"'),
+      part: flag.text('part', 'Attachment part from "pim mail read"'),
       out: flag.text(
         'path',
         'File to write, or an existing directory to write into',
@@ -212,13 +212,13 @@ const attachment = defineCommand(
 );
 
 export const program: Program<CommandEffect> = {
-  name: 'mailbox',
+  name: 'pim',
   summary:
-    'mailbox: search, read, and draft email in your IMAP accounts. It never sends mail.',
+    'pim: search, read, and draft email in your IMAP accounts. It never sends mail.',
   footer: [
-    'Run "mailbox <command> --help" for its options. Write --option=value when a value starts with "--".',
+    'Run "pim <command> --help" for its options. Write --option=value when a value starts with "--".',
     'Commands print JSON on stdout. Errors print {"error": {"tag", "message"}} on stderr and exit 1, or 2 for invalid arguments.',
-    'Accounts live in ~/.config/mailbox/accounts.toml (MAILBOX_CONFIG overrides the path).',
+    'Accounts live in ~/.config/pim/accounts.toml (PIM_CONFIG overrides the path).',
   ].join('\n'),
   commands: [
     accounts,
