@@ -1,7 +1,7 @@
 import { Array as Arr, Effect } from 'effect';
 import { DavError, type DavRequestError } from '../errors/dav';
 import type { DavClient } from './client';
-import { collectionPath, decodePercent } from './collections';
+import { decodePercent, serverPath } from './collections';
 import { type DavResource, ns, propHrefs, propText } from './xml';
 
 export type Principal = {
@@ -84,8 +84,7 @@ export const listCollections = (
     Effect.map((listings) =>
       Arr.dedupeWith(
         listings.flat(),
-        (left, right) =>
-          collectionPath(left.href) === collectionPath(right.href),
+        (left, right) => serverPath(left.href) === serverPath(right.href),
       ),
     ),
   );

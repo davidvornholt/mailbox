@@ -23,6 +23,14 @@ export const collectionPath = (href: string): string =>
     URL.parse(href, 'https://dav.invalid')?.pathname ?? href,
   ).replace(trailingSlashes, '/');
 
+// The path of an href as the server escaped it, with one trailing slash.
+// Escapes stay, so /a%2Fb/ and /a/b/ remain two collections.
+export const serverPath = (href: string): string =>
+  (URL.parse(href, 'https://dav.invalid')?.pathname ?? href).replace(
+    trailingSlashes,
+    '/',
+  );
+
 export const lastSegment = (href: string): string =>
   decodePercent(href.replace(trailingSlashes, '').split('/').at(-1) ?? href);
 

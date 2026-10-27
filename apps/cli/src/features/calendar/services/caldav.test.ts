@@ -99,6 +99,22 @@ describe('listCalendars', () => {
         '/calendars/team/plans/',
       ],
     ],
+    [
+      'homes that list a calendar twice and one with an escaped slash',
+      ['/calendars/me/', '/calendars/me/work/'],
+      {
+        'PROPFIND /calendars/me/': {
+          body: multistatus(
+            davResponse('/calendars/me/work/', calendarType),
+            davResponse('/calendars/me/work%2F/', calendarType),
+          ),
+        },
+        'PROPFIND /calendars/me/work/': {
+          body: multistatus(davResponse('/calendars/me/work/', calendarType)),
+        },
+      },
+      ['/calendars/me/work/', '/calendars/me/work%2F/'],
+    ],
   ])('lists the calendars of %s', async (_, homes, routes, hrefs) => {
     const { client } = fakeDavServer({
       ...discoveryRoutes,
