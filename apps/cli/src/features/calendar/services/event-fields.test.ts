@@ -95,6 +95,29 @@ describe('eventSummary', () => {
         : eventSummary(occurrence, context, berlin),
     ).toMatchObject({ start: '2026-10-27', end: '2026-10-29', allDay: true });
   });
+
+  it('counts the hours of a duration as exact time across a DST change', () => {
+    const object = parsed(
+      ...vevent(
+        'UID:night@example.com',
+        'DTSTAMP:20261001T000000Z',
+        'DTSTART;TZID=Europe/Berlin:20260329T013000',
+        'DURATION:PT3H',
+      ),
+    );
+    const [occurrence] = occurrencesIn(
+      object.vcalendar,
+      windowOf('2026-03-29T00:00:00Z', '2026-03-30T00:00:00Z'),
+      berlin,
+    );
+    const end = '2026-03-29T05:30:00+02:00';
+    expect(occurrence && eventSummary(occurrence, context, berlin).end).toBe(
+      end,
+    );
+    expect(
+      eventDetail(object, { ...context, etag: undefined }, berlin).end,
+    ).toBe(end);
+  });
 });
 
 describe('eventDetail', () => {

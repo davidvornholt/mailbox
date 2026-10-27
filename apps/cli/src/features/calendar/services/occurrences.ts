@@ -62,6 +62,41 @@ const endOf = (start: ICAL.Time, end: ICAL.Time): ICAL.Time => {
   return nextDay;
 };
 
+const millisPerSecond = 1000;
+
+// When an instance ends. The weeks and days of a DURATION are nominal, so
+// they move the date in the start's zone, but its hours, minutes, and
+// seconds are exact time, which matters across a DST change (RFC 5545,
+// section 3.3.6).
+export const endMsOf = (
+  event: ICAL.Event,
+  { start, end, startMs }: Pick<Occurrence, 'start' | 'end' | 'startMs'>,
+  local: DateTime.TimeZone,
+): number => {
+  const { component } = event;
+  const startTzid = tzidOf(component, 'dtstart');
+  const duration = component.getFirstPropertyValue('duration');
+  if (
+    start.isDate ||
+    component.hasProperty('dtend') ||
+    !(duration instanceof ICAL.Duration)
+  ) {
+    return Math.max(
+      startMs,
+      instantOf(end, tzidOf(component, 'dtend') ?? startTzid, local),
+    );
+  }
+  const { weeks, days, hours, minutes, seconds, isNegative } = duration;
+  const nominalEnd = start.clone();
+  nominalEnd.addDuration(new ICAL.Duration({ weeks, days, isNegative }));
+  const exact = new ICAL.Duration({ hours, minutes, seconds, isNegative });
+  return Math.max(
+    startMs,
+    instantOf(nominalEnd, startTzid, local) +
+      exact.toSeconds() * millisPerSecond,
+  );
+};
+
 // Where an instance of a series sits in its rule, before any override moved
 // it, and the zone of that slot.
 type Slot = {
@@ -81,18 +116,14 @@ const occurrence = (
   { event, start, end, slot }: Instance,
   local: DateTime.TimeZone,
 ): Occurrence => {
-  const startTzid = tzidOf(event.component, 'dtstart');
-  const startMs = instantOf(start, startTzid, local);
+  const startMs = instantOf(start, tzidOf(event.component, 'dtstart'), local);
   const fullEnd = endOf(start, end);
   return {
     event,
     start,
     end: fullEnd,
     startMs,
-    endMs: Math.max(
-      startMs,
-      instantOf(fullEnd, tzidOf(event.component, 'dtend') ?? startTzid, local),
-    ),
+    endMs: endMsOf(event, { start, end: fullEnd, startMs }, local),
     ...(slot === undefined
       ? {}
       : {

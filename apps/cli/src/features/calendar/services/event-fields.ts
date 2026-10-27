@@ -8,7 +8,7 @@ import type {
   EventSummary,
 } from '../schemas/calendar';
 import { formatDate, formatInstant, instantOf } from './ical-time';
-import { type Occurrence, tzidOf } from './occurrences';
+import { endMsOf, type Occurrence, tzidOf } from './occurrences';
 
 // One calendar object: its VCALENDAR, and the event series it describes.
 // The series is the VEVENT without a RECURRENCE-ID; the overrides change
@@ -168,17 +168,13 @@ export const eventSummary = (
 };
 
 const spanOf = (event: ICAL.Event, local: DateTime.TimeZone): Span => {
-  const startTzid = tzidOf(event.component, 'dtstart');
   const { startDate: start, endDate: end } = event;
-  const startMs = instantOf(start, startTzid, local);
+  const startMs = instantOf(start, tzidOf(event.component, 'dtstart'), local);
   return {
     start,
     end,
     startMs,
-    endMs: Math.max(
-      startMs,
-      instantOf(end, tzidOf(event.component, 'dtend') ?? startTzid, local),
-    ),
+    endMs: endMsOf(event, { start, end, startMs }, local),
   };
 };
 
