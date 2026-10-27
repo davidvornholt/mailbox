@@ -167,7 +167,7 @@ describe('refresh', () => {
     expect(
       await failureMessage(auth.refresh('me@outlook.com', 'current')),
     ).toBe(
-      'Microsoft rejected the stored sign-in for me@outlook.com: AADSTS70008: The refresh token has expired. Ask the user to run: pim login --account me@outlook.com',
+      'Microsoft rejected the stored sign-in for me@outlook.com: AADSTS70008: The refresh token has expired. Ask the user to run: pim login --account me@outlook.com --only mail',
     );
   });
 

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  ImapError,
   KeyringError,
   MissingCredentialsError,
-  OAuthError,
-} from '../errors/errors';
+} from '../../../shared/errors/accounts';
+import { ImapError, OAuthError } from '../errors/errors';
 import { statusFromError } from './status';
 
 describe('statusFromError', () => {
@@ -15,7 +14,7 @@ describe('statusFromError', () => {
     );
     expect(status.state).toBe('no-credentials');
     expect(status.ok).toBe(false);
-    expect(status.message).toContain('pim login --account a@b.com');
+    expect(status.message).toContain('pim login --account a@b.com --only mail');
   });
 
   it.each([

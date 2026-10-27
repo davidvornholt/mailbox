@@ -2,7 +2,7 @@
 
 > Built on [davidvornholt/standards](https://github.com/davidvornholt/standards).
 
-`pim` is a command-line tool for AI agents to work with a person's information. Its `mail` commands search, read, and draft email in IMAP accounts. It works with any IMAP server that accepts a password or app password, and with Outlook.com and Microsoft 365 accounts through Microsoft sign-in. It never sends mail: drafts go to the account's drafts folder, where you review and send them from your mail client.
+`pim` is a command-line tool for AI agents to work with a person's information. Its `mail` commands search, read, and draft email in IMAP accounts. It works with any IMAP server that accepts a password or app password, and with Outlook.com and Microsoft 365 accounts through Microsoft sign-in. It never sends mail: drafts go to the account's drafts folder, where you review and send them from your mail client. Its `calendar` and `contacts` commands read calendars over CalDAV and address books over CardDAV.
 
 ## Install
 
@@ -22,7 +22,11 @@ pim login
 pim status
 ```
 
-`pim login` checks each login against the server before storing it in the keyring service `pim` under `mail:<email>`. On Linux this needs a running Secret Service provider such as gnome-keyring.
+`pim login` checks each login against the server before storing it in the keyring service `pim` under `mail:<email>`, and the calendar and contacts login under `dav:<email>`. On Linux this needs a running Secret Service provider such as gnome-keyring.
+
+### Calendars and contacts
+
+An account gets calendars and contacts from an `[accounts.dav]` table with the server's DAV root URL, such as `https://sync.infomaniak.com/` for Infomaniak. pim finds the calendars and address books from there. `user` defaults to the IMAP user; some providers, Infomaniak among them, use a separate DAV username and app password. `pim login --account <email> --only dav` logs in to calendars and contacts alone.
 
 ### Outlook and Microsoft 365
 
@@ -32,7 +36,7 @@ pim uses Mozilla Thunderbird's public app ID, so Microsoft's consent screen asks
 
 ## Use
 
-Run `pim --help` for the commands, `pim mail --help` for the mail commands, and `pim <command> --help` for their options. The skill in [`apps/cli/skills/pim-mail`](apps/cli/skills/pim-mail/SKILL.md) tells agents how to draft and reply.
+Run `pim --help` for the commands, `pim mail --help`, `pim calendar --help`, or `pim contacts --help` for a group, and `pim <command> --help` for their options. The skills in [`apps/cli/skills`](apps/cli/skills) tell agents how to use each group.
 
 ## Develop
 

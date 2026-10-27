@@ -1,9 +1,6 @@
 import { Effect } from 'effect';
-import {
-  type MailError,
-  SearchAccountsError,
-  type UnknownAccountError,
-} from '../errors/errors';
+import type { UnknownAccountError } from '../../../shared/errors/accounts';
+import { type MailError, SearchAccountsError } from '../errors/errors';
 import type {
   SearchHit,
   SearchOptions,

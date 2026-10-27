@@ -1,12 +1,12 @@
 import { Effect } from 'effect';
 import type { ImapFlow } from 'imapflow';
+import type { Account } from '../../../shared/accounts/account';
 import {
   DraftError,
   ImapError,
   MessageNotFoundError,
   type StaleUidError,
 } from '../errors/errors';
-import type { Account } from '../schemas/account';
 import type {
   DraftHandle,
   DraftInput,

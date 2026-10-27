@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect, Fiber } from 'effect';
 import type { ImapFlow } from 'imapflow';
-import type { Account } from '../schemas/account';
+import type { Account } from '../../../shared/accounts/account';
 import { connectClient, makeClient } from './imap-client';
 
 const account: Account = {

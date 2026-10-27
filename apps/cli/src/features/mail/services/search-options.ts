@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
-import { SearchInputError, type UnknownAccountError } from '../errors/errors';
+import type { UnknownAccountError } from '../../../shared/errors/accounts';
+import { SearchInputError } from '../errors/errors';
 import {
   type SearchOptions,
   type SearchOptionsInput,

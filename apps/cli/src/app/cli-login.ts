@@ -1,6 +1,5 @@
 import { Console, Effect } from 'effect';
 import type { MailError } from '../features/mail/errors/errors';
-import { type Account, keyringService } from '../features/mail/schemas/account';
 import { Imap } from '../features/mail/services/imap';
 import {
   microsoftLogin,
@@ -9,7 +8,15 @@ import {
   storeVerifiedLogin,
 } from '../features/mail/services/login';
 import { MicrosoftAuth } from '../features/mail/services/microsoft-auth';
-import { Secrets } from '../features/mail/services/secrets';
+import { type Account, keyringService } from '../shared/accounts/account';
+import { type CredentialKind, Secrets } from '../shared/accounts/secrets';
+import { Dav } from '../shared/dav/dav';
+import { currentUserPrincipal } from '../shared/dav/discovery';
+import type { KeyringError } from '../shared/errors/accounts';
+import type {
+  DavNotConfiguredError,
+  DavRequestError,
+} from '../shared/errors/dav';
 import { type HiddenPromptResult, promptHidden } from '../shared/terminal';
 
 type LoginAttempt =
@@ -18,33 +25,47 @@ type LoginAttempt =
   | { readonly _tag: 'cancelled'; readonly message: string }
   | { readonly _tag: 'failed'; readonly message: string };
 
-type LoginResult = LoginAttempt & { readonly email: string };
+type LoginResult = LoginAttempt & {
+  readonly email: string;
+  readonly service: CredentialKind;
+};
+
+// One credential to obtain, verify, and store.
+export type LoginStep = {
+  readonly account: Account;
+  readonly service: CredentialKind;
+};
 
 // A login to verify and store, or the attempt's result when there is none.
-type Obtained =
-  | { readonly _tag: 'obtained'; readonly login: NewLogin }
+type Obtained<A> =
+  | { readonly _tag: 'obtained'; readonly login: A }
   | Extract<LoginAttempt, { readonly _tag: 'skipped' | 'cancelled' }>;
 
 type HiddenPrompt = (question: string) => Effect.Effect<HiddenPromptResult>;
 
 const cancelled = {
   _tag: 'cancelled',
-  message: 'cancelled — remaining accounts skipped.',
+  message: 'cancelled — remaining logins skipped.',
+} as const;
+
+const stored = {
+  _tag: 'success',
+  message: `verified and stored in the OS keyring (service "${keyringService}").`,
 } as const;
 
 const promptPassword = (
-  email: string,
+  question: string,
   prompt: HiddenPrompt,
-): Effect.Effect<Obtained> =>
-  prompt(`Password for ${email} (input hidden): `).pipe(
-    Effect.map((result): Obtained => {
+): Effect.Effect<Obtained<string>> =>
+  prompt(question).pipe(
+    Effect.map((result): Obtained<string> => {
       if (result._tag === 'cancelled') {
         return cancelled;
       }
       if (result.value === '') {
         return { _tag: 'skipped', message: 'empty password — skipped.' };
       }
-      return { _tag: 'obtained', login: passwordLogin(result.value) };
+      return { _tag: 'obtained', login: result.value };
     }),
   );
 
@@ -53,7 +74,7 @@ const promptPassword = (
 const signInWithMicrosoft = (
   email: string,
   prompt: HiddenPrompt,
-): Effect.Effect<Obtained, MailError, MicrosoftAuth> =>
+): Effect.Effect<Obtained<NewLogin>, MailError, MicrosoftAuth> =>
   Effect.gen(function* () {
     const microsoft = yield* MicrosoftAuth;
     const device = yield* microsoft.requestDeviceCode;
@@ -64,7 +85,7 @@ const signInWithMicrosoft = (
         `Sign in to Microsoft as ${email}: open ${device.verificationUri} and enter the code ${device.userCode}\nWaiting for sign-in (press Enter to skip): `,
       ).pipe(
         Effect.map(
-          (result): Obtained =>
+          (result): Obtained<NewLogin> =>
             result._tag === 'cancelled'
               ? cancelled
               : { _tag: 'skipped', message: 'sign-in skipped.' },
@@ -72,7 +93,7 @@ const signInWithMicrosoft = (
       ),
       microsoft.awaitSignIn(device).pipe(
         Effect.map(
-          (tokens): Obtained => ({
+          (tokens): Obtained<NewLogin> => ({
             _tag: 'obtained',
             login: microsoftLogin(tokens),
           }),
@@ -81,14 +102,24 @@ const signInWithMicrosoft = (
     );
   });
 
-const loginAccount = (
+const loginMail = (
   account: Account,
   prompt: HiddenPrompt,
 ): Effect.Effect<LoginAttempt, MailError, Imap | Secrets | MicrosoftAuth> =>
   Effect.gen(function* () {
     const obtained =
       account.auth === 'password'
-        ? yield* promptPassword(account.email, prompt)
+        ? yield* promptPassword(
+            `Mail password for ${account.email} (input hidden): `,
+            prompt,
+          ).pipe(
+            Effect.map(
+              (result): Obtained<NewLogin> =>
+                result._tag === 'obtained'
+                  ? { _tag: 'obtained', login: passwordLogin(result.login) }
+                  : result,
+            ),
+          )
         : yield* signInWithMicrosoft(account.email, prompt);
     if (obtained._tag !== 'obtained') {
       return obtained;
@@ -99,39 +130,87 @@ const loginAccount = (
       account.email,
       obtained.login,
       imap.verifyLogin,
-      secrets.setCredential,
+      (email, credential) => secrets.setCredential('mail', email, credential),
     );
-    return {
-      _tag: 'success',
-      message: `verified and stored in the OS keyring (service "${keyringService}").`,
-    } as const;
+    return stored;
   });
 
-// Logs in to each account in turn and reports every result. Resolves to true
-// only when every account was stored.
-export const loginAccounts = (
+// Like the mail login, the password is checked against the server before it
+// can replace a working one in the keyring.
+const loginDav = (
+  account: Account,
+  prompt: HiddenPrompt,
+): Effect.Effect<
+  LoginAttempt,
+  DavNotConfiguredError | DavRequestError | KeyringError,
+  Dav | Secrets
+> =>
+  Effect.gen(function* () {
+    const user = account.dav?.user ?? account.user;
+    const obtained = yield* promptPassword(
+      `Calendar and contacts password for ${account.email} (DAV user ${user}, input hidden): `,
+      prompt,
+    );
+    if (obtained._tag !== 'obtained') {
+      return obtained;
+    }
+    const dav = yield* Dav;
+    const client = yield* dav.clientWith(account, obtained.login);
+    yield* currentUserPrincipal(client);
+    const secrets = yield* Secrets;
+    yield* secrets.setCredential('dav', account.email, obtained.login);
+    return stored;
+  });
+
+// Without `only`, each account logs in to mail and, when it has
+// [accounts.dav], to calendars and contacts.
+export const loginSteps = (
   accounts: ReadonlyArray<Account>,
+  only: CredentialKind | undefined,
+): ReadonlyArray<LoginStep> =>
+  accounts.flatMap((account) => {
+    const configured: ReadonlyArray<CredentialKind> =
+      account.dav === undefined ? ['mail'] : ['mail', 'dav'];
+    return configured
+      .filter((service) => only === undefined || service === only)
+      .map((service) => ({ account, service }));
+  });
+
+// Logs in to each step in turn and reports every result. Resolves to true
+// only when every credential was stored.
+export const loginAccounts = (
+  steps: ReadonlyArray<LoginStep>,
   prompt: HiddenPrompt = promptHidden,
-): Effect.Effect<boolean, never, Imap | Secrets | MicrosoftAuth> =>
+): Effect.Effect<boolean, never, Imap | Secrets | MicrosoftAuth | Dav> =>
   Effect.gen(function* () {
     const results: Array<LoginResult> = [];
-    for (const account of accounts) {
-      const result = yield* loginAccount(account, prompt).pipe(
+    for (const { account, service } of steps) {
+      const attempt: Effect.Effect<
+        LoginAttempt,
+        { readonly message: string },
+        Imap | Secrets | MicrosoftAuth | Dav
+      > =
+        service === 'mail'
+          ? loginMail(account, prompt)
+          : loginDav(account, prompt);
+      const result = yield* attempt.pipe(
         Effect.catch((error) =>
           Effect.succeed({ _tag: 'failed', message: error.message } as const),
         ),
       );
-      results.push({ email: account.email, ...result });
+      results.push({ email: account.email, service, ...result });
       if (result._tag === 'cancelled') {
         break;
       }
     }
     yield* Effect.forEach(
       results,
-      (result) =>
-        result._tag === 'success'
-          ? Console.log(`${result.email}: ${result.message}`)
-          : Console.error(`${result.email}: ${result.message}`),
+      (result) => {
+        const line = `${result.email} (${result.service}): ${result.message}`;
+        return result._tag === 'success'
+          ? Console.log(line)
+          : Console.error(line);
+      },
       { discard: true },
     );
     return results.every((result) => result._tag === 'success');

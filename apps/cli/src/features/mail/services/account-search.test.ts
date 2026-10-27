@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import {
-  ImapError,
-  type MailError,
-  MissingCredentialsError,
-} from '../errors/errors';
+import { MissingCredentialsError } from '../../../shared/errors/accounts';
+import { ImapError, type MailError } from '../errors/errors';
 import { searchAllAccounts, searchOneAccount } from './account-search';
 import { mailboxHit, searchOptions } from './account-search.fixture';
 import type { MailboxSearchHit } from './imap-search';

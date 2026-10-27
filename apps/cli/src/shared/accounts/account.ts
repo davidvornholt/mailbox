@@ -1,8 +1,7 @@
 import { Effect, Result, Schema, SchemaIssue } from 'effect';
 
-// Keyring service namespace for stored credentials: IMAP passwords, or refresh
-// tokens for Microsoft accounts. They live in the OS keyring (see
-// services/secrets.ts), keyed by account email.
+// Keyring service namespace for stored credentials. They live in the OS
+// keyring (see secrets.ts), keyed by credential kind and account email.
 export const keyringService = 'pim';
 
 // How an account logs in to IMAP: with a password, or with a Microsoft sign-in
@@ -14,6 +13,21 @@ const implicitTlsPort = 993;
 const maxPort = 65_535;
 
 const NonEmptyTrimmedString = Schema.NonEmptyString.check(Schema.isTrimmed());
+
+const HttpsUrl = NonEmptyTrimmedString.check(
+  Schema.makeFilter(
+    (value) =>
+      (URL.canParse(value) && new URL(value).protocol === 'https:') ||
+      'must be an https URL',
+  ),
+);
+
+// CalDAV and CardDAV access for calendars and contacts. url is the server's
+// DAV root, from which commands discover the calendars and address books.
+const DavEntry = Schema.Struct({
+  url: HttpsUrl,
+  user: Schema.optionalKey(NonEmptyTrimmedString),
+});
 
 const AccountEntry = Schema.Struct({
   email: NonEmptyTrimmedString,
@@ -29,6 +43,7 @@ const AccountEntry = Schema.Struct({
   auth: AccountAuth.pipe(
     Schema.withDecodingDefaultKey(Effect.succeed('password' as const)),
   ),
+  dav: Schema.optionalKey(DavEntry),
 });
 
 const formatIssue = SchemaIssue.makeFormatterDefault();
@@ -59,6 +74,12 @@ export type Account = {
   readonly secure: boolean;
   readonly user: string;
   readonly auth: AccountAuth;
+  readonly dav?: DavSettings;
+};
+
+export type DavSettings = {
+  readonly url: string;
+  readonly user: string;
 };
 
 export const findAccount = (
@@ -77,10 +98,16 @@ export const decodeAccounts = (
     onExcessProperty: 'error',
   }).pipe(
     Result.map(({ accounts }) =>
-      accounts.map((account) => ({
-        ...account,
-        user: account.user ?? account.email,
-      })),
+      accounts.map(({ dav, ...account }) => {
+        const user = account.user ?? account.email;
+        return {
+          ...account,
+          user,
+          ...(dav === undefined
+            ? {}
+            : { dav: { ...dav, user: dav.user ?? user } }),
+        };
+      }),
     ),
     Result.mapError((error) => formatIssue(error.issue)),
   );

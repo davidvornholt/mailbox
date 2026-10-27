@@ -2,7 +2,7 @@ import { expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import type { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import type { Account } from '../schemas/account';
+import type { Account } from '../../../shared/accounts/account';
 import { writeDraft } from './draft';
 
 const account: Account = {

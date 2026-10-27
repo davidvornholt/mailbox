@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Result } from 'effect';
-import { ConfigError, UnknownAccountError } from '../errors/errors';
-import { type Account, decodeAccounts, findAccount } from '../schemas/account';
+import { ConfigError, UnknownAccountError } from '../errors/accounts';
+import { type Account, decodeAccounts, findAccount } from './account';
 
 // PIM_CONFIG overrides the XDG location (tests point it at fixtures).
 const resolveConfigPath = (): Effect.Effect<string, ConfigError> => {
@@ -58,8 +58,8 @@ const loadAccounts = Effect.gen(function* () {
   });
 });
 
-export class MailConfig extends Context.Service<
-  MailConfig,
+export class AccountConfig extends Context.Service<
+  AccountConfig,
   {
     readonly accounts: ReadonlyArray<Account>;
     readonly emails: ReadonlyArray<string>;
@@ -68,13 +68,13 @@ export class MailConfig extends Context.Service<
       email: string,
     ) => Effect.Effect<Account, UnknownAccountError>;
   }
->()('mail/MailConfig') {
+>()('shared/AccountConfig') {
   static readonly layer = Layer.effect(
-    MailConfig,
+    AccountConfig,
     Effect.gen(function* () {
       const accounts = yield* loadAccounts;
       const emails = accounts.map((account) => account.email);
-      return MailConfig.of({
+      return AccountConfig.of({
         accounts,
         emails,
         getAccount: (email) => {

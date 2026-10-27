@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
+import type { Account } from '../../../shared/accounts/account';
 import { DraftError } from '../errors/errors';
-import type { Account } from '../schemas/account';
 import type { DraftInput, FullMessage } from '../schemas/mail';
 import { buildReplyContent } from './reply-quote';
 import { textToHtml } from './text-to-html';

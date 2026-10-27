@@ -10,6 +10,11 @@ host = "imap.example.com"  # IMAP server
 # user = "you@example.com" # IMAP login; defaults to email
 # auth = "password"        # "password" or "microsoft"; default "password"
 
+# Calendars and contacts over CalDAV and CardDAV; leave out for mail only.
+# [accounts.dav]
+# url = "https://dav.example.com/" # the server's DAV root
+# user = "you@example.com"         # DAV login; defaults to the IMAP user
+
 # Outlook.com and Microsoft 365 accounts sign in with Microsoft instead.
 # [[accounts]]
 # email = "you@outlook.com"

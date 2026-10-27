@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import { MailConfig } from './config';
+import { AccountConfig } from './config';
 
 const fixturePath = Bun.fileURLToPath(
   new URL('./accounts.fixture.toml', import.meta.url),
@@ -25,21 +25,21 @@ afterAll(async () => {
   await Bun.$`rm -rf ${tempDir}`;
 });
 
-const loadWith = <A, E>(effect: Effect.Effect<A, E, MailConfig>) =>
-  Effect.runPromise(Effect.result(Effect.provide(effect, MailConfig.layer)));
+const loadWith = <A, E>(effect: Effect.Effect<A, E, AccountConfig>) =>
+  Effect.runPromise(Effect.result(Effect.provide(effect, AccountConfig.layer)));
 
 const getAccount = (email: string) =>
-  MailConfig.pipe(Effect.flatMap((config) => config.getAccount(email)));
+  AccountConfig.pipe(Effect.flatMap((config) => config.getAccount(email)));
 
 const failureMessage = async () => {
-  const result = await loadWith(MailConfig);
+  const result = await loadWith(AccountConfig);
   if (result._tag === 'Success') {
     throw new Error('expected the config to fail');
   }
   return result.failure.message;
 };
 
-describe('MailConfig', () => {
+describe('AccountConfig', () => {
   it('resolves an account case-insensitively to its configured spelling', async () => {
     Bun.env.PIM_CONFIG = fixturePath;
     const result = await loadWith(getAccount('TEST@example.com'));
