@@ -17,6 +17,30 @@ export type Occurrence = {
 // A series with more occurrences before the window ends can't be listed.
 const maxRuleSteps = 50_000;
 
+// ical.js 2.2.1 looks for a rule's next date in a loop inside
+// RecurIterator.next() that gives up only for MONTHLY and YEARLY rules, so a
+// rule that matches no date, such as FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30,
+// never returns, and no timeout can stop synchronous code. The loop tests
+// each candidate date with check_contracting_rules, so counting those calls
+// per iterator bounds its work, including the first search that
+// Event.iterator() already runs.
+const maxCandidates = 200_000;
+const candidatesTested = new WeakMap<ICAL.RecurIterator, number>();
+const checkContractingRules =
+  ICAL.RecurIterator.prototype.check_contracting_rules;
+ICAL.RecurIterator.prototype.check_contracting_rules = function (
+  this: ICAL.RecurIterator,
+): boolean {
+  const tested = (candidatesTested.get(this) ?? 0) + 1;
+  if (tested > maxCandidates) {
+    throw new Error(
+      `its rule ${this.rule.toString()} needed more than ${maxCandidates} candidate dates, so it may match no date at all`,
+    );
+  }
+  candidatesTested.set(this, tested);
+  return checkContractingRules.call(this);
+};
+
 export const tzidOf = (
   component: ICAL.Component,
   property: string,
@@ -122,7 +146,7 @@ const ruleOccurrences = (
   ) {
     if (step === maxRuleSteps) {
       throw new Error(
-        `Event ${event.uid} repeats more than ${maxRuleSteps} times before the end of the requested time range, more than can be listed`,
+        `it repeats more than ${maxRuleSteps} times before the end of the requested time range`,
       );
     }
     const details = event.getOccurrenceDetails(next);
@@ -176,10 +200,18 @@ const expandSeries = (
     return inWindow(asStored(event), window, local);
   }
   const ruleTzid = tzidOf(master, 'dtstart');
-  return [
-    ...ruleOccurrences(event, ruleTzid, window, local),
-    ...movedIntoWindow(overrides, ruleTzid, window, local),
-  ];
+  try {
+    return [
+      ...ruleOccurrences(event, ruleTzid, window, local),
+      ...movedIntoWindow(overrides, ruleTzid, window, local),
+    ];
+  } catch (cause) {
+    // ical.js's own errors don't say which event they are about.
+    throw new Error(
+      `Could not work out the occurrences of event ${event.uid}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+  }
 };
 
 // The occurrences of every event in one calendar object that overlap the

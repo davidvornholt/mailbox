@@ -102,6 +102,20 @@ describe('occurrencesIn for a series', () => {
       ),
     ).toThrow('minutely@example.com');
   });
+
+  it('throws for a rule that matches no date', () => {
+    const never = vcalendarOf(
+      ...vevent(
+        'UID:never@example.com',
+        'DTSTAMP:20261001T000000Z',
+        'DTSTART:20260101T100000Z',
+        'RRULE:FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30',
+      ),
+    );
+    expect(() => occurrencesIn(never, october, berlin)).toThrow(
+      'never@example.com',
+    );
+  });
 });
 
 describe('occurrencesIn for single events', () => {
