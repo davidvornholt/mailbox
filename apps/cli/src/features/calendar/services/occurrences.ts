@@ -69,10 +69,11 @@ const endOf = (start: ICAL.Time, end: ICAL.Time): ICAL.Time => {
 
 const millisPerSecond = 1000;
 
-// When an instance ends. The weeks and days of a DURATION are nominal, so
-// they move the date in the start's zone, but its hours, minutes, and
-// seconds are exact time, which matters across a DST change (RFC 5545,
-// section 3.3.6).
+// When an instance ends. A DTEND gives every instance the same exact length
+// (RFC 5545, section 3.8.5.3). The weeks and days of a DURATION are
+// nominal, so they move the date in the start's zone, but its hours,
+// minutes, and seconds are exact time (section 3.3.6). Both matter across a
+// DST change.
 export const endMsOf = (
   event: ICAL.Event,
   { start, end, startMs }: Pick<Occurrence, 'start' | 'end' | 'startMs'>,
@@ -80,16 +81,16 @@ export const endMsOf = (
 ): number => {
   const { component } = event;
   const startTzid = tzidOf(component, 'dtstart');
+  const endTzid = tzidOf(component, 'dtend') ?? startTzid;
+  if (!start.isDate && component.hasProperty('dtend')) {
+    const length =
+      instantOf(event.endDate, endTzid, local) -
+      instantOf(event.startDate, startTzid, local);
+    return Math.max(startMs, startMs + length);
+  }
   const duration = component.getFirstPropertyValue('duration');
-  if (
-    start.isDate ||
-    component.hasProperty('dtend') ||
-    !(duration instanceof ICAL.Duration)
-  ) {
-    return Math.max(
-      startMs,
-      instantOf(end, tzidOf(component, 'dtend') ?? startTzid, local),
-    );
+  if (start.isDate || !(duration instanceof ICAL.Duration)) {
+    return Math.max(startMs, instantOf(end, endTzid, local));
   }
   const { weeks, days, hours, minutes, seconds, isNegative } = duration;
   const nominalEnd = start.clone();

@@ -41,6 +41,30 @@ describe('occurrencesIn for a series', () => {
     ).toEqual(starts(found));
   });
 
+  it('keeps the exact length of a DTEND across a DST change', () => {
+    const found = occurrencesIn(
+      vcalendarOf(
+        ...vevent(
+          'UID:night@example.com',
+          'DTSTAMP:20260301T000000Z',
+          'DTSTART;TZID=Europe/Berlin:20260329T013000',
+          'DTEND;TZID=Europe/Berlin:20260329T043000',
+          'RRULE:FREQ=DAILY;COUNT=2',
+        ),
+      ),
+      windowOf('2026-03-29T02:00:00Z', '2026-03-30T00:00:00Z'),
+      berlin,
+    );
+    expect(
+      found.map(({ startMs, endMs }) =>
+        [startMs, endMs].map((ms) => new Date(ms).toISOString()),
+      ),
+    ).toEqual([
+      ['2026-03-29T00:30:00.000Z', '2026-03-29T02:30:00.000Z'],
+      ['2026-03-29T23:30:00.000Z', '2026-03-30T01:30:00.000Z'],
+    ]);
+  });
+
   it('leaves out excluded occurrences', () => {
     const series = [
       ...weeklySeries.slice(0, -1),
