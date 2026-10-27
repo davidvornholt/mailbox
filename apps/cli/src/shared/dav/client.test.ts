@@ -48,16 +48,26 @@ describe('makeDavClient', () => {
     expect(error._tag).toBe('DavNotFoundError');
   });
 
-  it('reports a forbidden request without the response body', async () => {
+  const authorization = btoa(`${davLogin.user}:${davLogin.password}`);
+
+  it.each([
+    [403, 'GET /item.ics failed with HTTP 403: the server forbids it'],
+    [500, 'GET /item.ics failed with HTTP 500'],
+  ])('reports HTTP %d without the response body', async (status, message) => {
     const { client } = fakeDavServer({
-      'GET /item.ics': { status: 403, body: '<html>stack trace</html>' },
+      'GET /item.ics': {
+        status,
+        body: `<html>stack trace: password=${davLogin.password} authorization: Basic ${authorization}</html>`,
+      },
     });
     const error = await failureOf(
       client.send({ method: 'GET', href: '/item.ics' }),
     );
     expect(error._tag).toBe('DavError');
-    expect(error.message).toContain('the server forbids it');
+    expect(error.message).toBe(message);
     expect(error.message).not.toContain('stack trace');
+    expect(error.message).not.toContain(davLogin.password);
+    expect(error.message).not.toContain(authorization);
   });
 
   it('rejects a reply that is not a multistatus', async () => {

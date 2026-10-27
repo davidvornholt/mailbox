@@ -38,7 +38,6 @@ const requestTimeout = Duration.seconds(requestTimeoutSeconds);
 const httpUnauthorized = 401;
 const httpForbidden = 403;
 const httpNotFound = 404;
-const bodyExcerptLength = 200;
 const xmlContentType = 'application/xml; charset=utf-8';
 
 // Every prefix the request bodies use; the server answers with its own.
@@ -65,12 +64,12 @@ const failure = (
       message: `${request.href} does not exist on ${new URL(login.url).host}`,
     });
   }
+  // The response body stays out of the message: an error page can echo the
+  // request, including the password and the authorization header.
   const reason =
-    reply.status === httpForbidden
-      ? 'the server forbids it'
-      : reply.body.trim().slice(0, bodyExcerptLength);
+    reply.status === httpForbidden ? ': the server forbids it' : '';
   return new DavError({
-    message: `${request.method} ${request.href} failed with HTTP ${reply.status}: ${reason}`,
+    message: `${request.method} ${request.href} failed with HTTP ${reply.status}${reason}`,
   });
 };
 
