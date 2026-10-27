@@ -1,6 +1,11 @@
 import type { DateTime } from 'effect';
 import ICAL from 'ical.js';
-import { instantOf, registerIanaZones, type TimeWindow } from './ical-time';
+import {
+  formatDate,
+  instantOf,
+  registerIanaZones,
+  type TimeWindow,
+} from './ical-time';
 
 // One occurrence of an event: the event itself, or one instance of a
 // recurring event, drawn from the override that changed it if there is one.
@@ -104,26 +109,33 @@ type Slot = {
   readonly tzid: string | undefined;
 };
 
-// An event, or one instance of a series, with its times as written.
+// An event, or one instance of a series, with its times as written. An
+// instance from a PERIOD RDATE has its own end, which the event's DURATION
+// doesn't change.
 type Instance = {
   readonly event: ICAL.Event;
   readonly start: ICAL.Time;
   readonly end: ICAL.Time;
   readonly slot?: Slot;
+  readonly ownEnd?: boolean;
 };
 
 const occurrence = (
-  { event, start, end, slot }: Instance,
+  { event, start, end, slot, ownEnd }: Instance,
   local: DateTime.TimeZone,
 ): Occurrence => {
-  const startMs = instantOf(start, tzidOf(event.component, 'dtstart'), local);
+  const startTzid = tzidOf(event.component, 'dtstart');
+  const startMs = instantOf(start, startTzid, local);
   const fullEnd = endOf(start, end);
   return {
     event,
     start,
     end: fullEnd,
     startMs,
-    endMs: endMsOf(event, { start, end: fullEnd, startMs }, local),
+    endMs:
+      ownEnd === true
+        ? Math.max(startMs, instantOf(fullEnd, startTzid, local))
+        : endMsOf(event, { start, end: fullEnd, startMs }, local),
     ...(slot === undefined
       ? {}
       : {
@@ -159,6 +171,45 @@ const inWindow = (
   return overlaps(found, window) ? [found] : [];
 };
 
+// The instance of a series at one of its dates, from the override that
+// changed it if there is one. ical.js gives a PERIOD RDATE as a period.
+const instanceAt = (
+  event: ICAL.Event,
+  date: ICAL.Time | ICAL.Period,
+  ruleTzid: string | undefined,
+): Instance => {
+  const details = event.getOccurrenceDetails(
+    date instanceof ICAL.Period ? date.start : date,
+  );
+  if (details.item !== event) {
+    return {
+      event: details.item,
+      start: details.startDate,
+      end: details.endDate,
+      slot: {
+        time: details.recurrenceId,
+        tzid: tzidOf(details.item.component, 'recurrence-id') ?? ruleTzid,
+      },
+    };
+  }
+  const slot = { time: details.recurrenceId, tzid: ruleTzid };
+  return date instanceof ICAL.Period
+    ? { event, start: date.start, end: date.getEnd(), slot, ownEnd: true }
+    : { event, start: details.startDate, end: details.endDate, slot };
+};
+
+// Whether an EXDATE removes the instance at `time`. As in ical.js, a
+// date-only EXDATE removes the instances on its date.
+const isExcluded = (component: ICAL.Component, time: ICAL.Time): boolean =>
+  component
+    .getAllProperties('exdate')
+    .flatMap((property) => property.getValues())
+    .some((excluded: ICAL.Time) =>
+      excluded.isDate && !time.isDate
+        ? formatDate(excluded) === formatDate(time)
+        : excluded.compare(time) === 0,
+    );
+
 // The rule's occurrences until the window ends, with overrides applied.
 const ruleOccurrences = (
   event: ICAL.Event,
@@ -166,13 +217,26 @@ const ruleOccurrences = (
   window: TimeWindow,
   local: DateTime.TimeZone,
 ): ReadonlyArray<Occurrence> => {
-  const found: Array<Occurrence> = [];
+  // DTSTART is always the first instance (RFC 5545, section 3.8.5.2), but
+  // ical.js leaves it out of a series of RDATEs without an RRULE.
+  const { component, startDate } = event;
+  const addsStart = !(
+    component.hasProperty('rrule') || isExcluded(component, startDate)
+  );
+  const found: Array<Occurrence> =
+    addsStart && instantOf(startDate, ruleTzid, local) < window.endMs
+      ? [...inWindow(instanceAt(event, startDate, ruleTzid), window, local)]
+      : [];
   const iterator = event.iterator();
   for (
-    let step = 0, next = iterator.next();
+    let step = 0, next: ICAL.Time | ICAL.Period = iterator.next();
     next !== null &&
     next !== undefined &&
-    instantOf(next, ruleTzid, local) < window.endMs;
+    instantOf(
+      next instanceof ICAL.Period ? next.start : next,
+      ruleTzid,
+      local,
+    ) < window.endMs;
     step += 1, next = iterator.next()
   ) {
     if (step === maxRuleSteps) {
@@ -180,23 +244,10 @@ const ruleOccurrences = (
         `it repeats more than ${maxRuleSteps} times before the end of the requested time range`,
       );
     }
-    const details = event.getOccurrenceDetails(next);
-    const slotTzid =
-      details.item === event
-        ? ruleTzid
-        : (tzidOf(details.item.component, 'recurrence-id') ?? ruleTzid);
-    found.push(
-      ...inWindow(
-        {
-          event: details.item,
-          start: details.startDate,
-          end: details.endDate,
-          slot: { time: details.recurrenceId, tzid: slotTzid },
-        },
-        window,
-        local,
-      ),
-    );
+    const instance = instanceAt(event, next, ruleTzid);
+    if (!(addsStart && instance.slot?.time.compare(startDate) === 0)) {
+      found.push(...inWindow(instance, window, local));
+    }
   }
   return found;
 };

@@ -74,6 +74,30 @@ describe('occurrencesIn for a series', () => {
     expect(moved?.recurrenceId?.ms).toBe(Date.parse('2026-10-27T09:00:00Z'));
   });
 
+  it('starts a series of dates at DTSTART and ends a period on its own', () => {
+    const found = occurrencesIn(
+      vcalendarOf(
+        ...vevent(
+          'UID:dates@example.com',
+          'DTSTAMP:20261001T000000Z',
+          'DTSTART:20261026T090000Z',
+          'DURATION:PT1H',
+          'RDATE;VALUE=PERIOD:20261027T090000Z/20261027T120000Z',
+        ),
+      ),
+      october,
+      berlin,
+    );
+    expect(
+      found.map(({ startMs, endMs }) =>
+        [startMs, endMs].map((ms) => new Date(ms).toISOString()),
+      ),
+    ).toEqual([
+      ['2026-10-26T09:00:00.000Z', '2026-10-26T10:00:00.000Z'],
+      ['2026-10-27T09:00:00.000Z', '2026-10-27T12:00:00.000Z'],
+    ]);
+  });
+
   it('finds an occurrence moved into the window from after it', () => {
     const found = occurrencesIn(
       vcalendarOf(
