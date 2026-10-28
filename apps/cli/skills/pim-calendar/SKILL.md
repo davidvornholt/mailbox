@@ -15,5 +15,5 @@ Run `pim calendar --help` for the calendar commands and `pim <command> --help` f
 - Before `pim calendar update` or `pim calendar delete`, run `pim calendar get` and pass its `etag` exactly, quotes included. If the command reports a conflict, the event changed: get it again and check the change still makes sense.
 - Pass `--series` only when the user wants every occurrence of a recurring event renamed, edited, or deleted.
 - `--notify-attendees` lets the calendar server email invitations, updates, or cancellations. Pass it only when the user asked to invite, update, or cancel, and after confirming the exact attendee addresses with them. Without it, pim refuses any write that would email someone.
-- After inviting, check each attendee's `scheduleStatus`: 1.x means the server sent or delivered the message, 3.x and 5.x mean it did not.
+- After a write with `--notify-attendees`, check each attendee's `scheduleStatus`: 1.x means the server sent the message, 3.x and 5.x mean it did not. Some servers report none for a new event; then only the attendee's mailbox shows whether the invitation arrived.
 - If an account has no working calendar login, ask the user to run `pim login --account <email> --only dav`.

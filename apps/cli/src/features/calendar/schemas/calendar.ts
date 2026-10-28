@@ -34,7 +34,7 @@ export type Attendee = {
   readonly partstat?: string;
   readonly rsvp?: boolean;
   // How the server delivered the organizer's last message to the attendee,
-  // such as 1.2 for delivered (RFC 6638, section 3.2.9).
+  // such as 1.1 for sent (RFC 6638, section 3.2.9). Servers may leave it out.
   readonly scheduleStatus?: string;
 };
 
