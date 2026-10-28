@@ -39,7 +39,8 @@ const dateOf = (time: ICAL.Time): CalendarDate => ({
 });
 
 // Times are written in UTC, so the event needs no VTIMEZONE; DTEND of an
-// all-day event is the day after its last day.
+// all-day event is the day after its last day, and a zero-length event has
+// none, since DTEND must be later than DTSTART.
 const setSpan = (component: ICAL.Component, span: EventSpan): void => {
   for (const name of ['dtstart', 'dtend', 'duration']) {
     component.removeAllProperties(name);
@@ -49,7 +50,9 @@ const setSpan = (component: ICAL.Component, span: EventSpan): void => {
     component.addPropertyWithValue('dtend', dateTime(addDays(span.last, 1)));
   } else {
     component.addPropertyWithValue('dtstart', utcTime(span.startMs));
-    component.addPropertyWithValue('dtend', utcTime(span.endMs));
+    if (span.endMs !== span.startMs) {
+      component.addPropertyWithValue('dtend', utcTime(span.endMs));
+    }
   }
 };
 

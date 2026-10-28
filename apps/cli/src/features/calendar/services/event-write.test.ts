@@ -20,6 +20,7 @@ const nowMs = Date.parse('2026-10-28T09:15:00.250Z');
 const lines = (ics: string) => ics.split('\r\n');
 const invitation = /ORGANIZER|ATTENDEE|VALARM/u;
 const oldDescription = /LOCATION|X-ALT-DESC|ALTREP/u;
+const endOrDuration = /DTEND|DURATION/u;
 
 describe('newEventIcs', () => {
   it('writes an all-day event that invites no one', () => {
@@ -189,6 +190,23 @@ describe('applyChanges', () => {
     expect(ics.join('\n')).not.toContain('DURATION');
     expect(ics).toContain('SEQUENCE:3');
     expect(ics).toContain('SUMMARY:Planning');
+  });
+
+  it('moves a zero-length event without writing an end', () => {
+    const { result, ics } = changed(
+      objectOf(
+        ...vevent(
+          'UID:z@example.com',
+          'DTSTAMP:20261001T000000Z',
+          'SUMMARY:Reminder',
+          'DTSTART;TZID=Europe/Berlin:20261028T100000',
+        ),
+      ),
+      { start: { _tag: 'Instant', ms: Date.parse('2026-10-29T08:00:00Z') } },
+    );
+    expect(result).toEqual(Result.void);
+    expect(ics).toContain('DTSTART:20261029T080000Z');
+    expect(ics.join('\n')).not.toMatch(endOrDuration);
   });
 
   it('turns a timed event into an all-day one', () => {
