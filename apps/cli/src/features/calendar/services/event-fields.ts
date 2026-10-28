@@ -114,12 +114,17 @@ const attendeesOf = (component: ICAL.Component): ReadonlyArray<Attendee> =>
     ...optional('scheduleStatus', parameter(property, 'schedule-status')),
   }));
 
+// Who attends and how they answered, to compare an occurrence with its
+// series.
 const attendeeSet = (component: ICAL.Component): string =>
   [
     ...new Set(
       component
         .getAllProperties('attendee')
-        .map((property) => address(property).toLowerCase()),
+        .map(
+          (property) =>
+            `${address(property).toLowerCase()}=${parameter(property, 'partstat')?.toUpperCase() ?? 'NEEDS-ACTION'}`,
+        ),
     ),
   ]
     .toSorted()
@@ -228,7 +233,7 @@ const changeOf = (
       'attendees',
       attendeeSet(override.component) === attendeeSet(master)
         ? undefined
-        : override.component.getAllProperties('attendee').map(address),
+        : attendeesOf(override.component),
     ),
   };
 };

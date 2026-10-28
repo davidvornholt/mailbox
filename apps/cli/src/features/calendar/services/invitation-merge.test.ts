@@ -38,6 +38,18 @@ const changed = (invitation: ReceivedInvitation, stored: string) => {
 const cancellation = (...lines: ReadonlyArray<string>) =>
   received(invitationIcs(...lines).replace('METHOD:REQUEST', 'METHOD:CANCEL'));
 
+// The copy after each message in turn, each of which changes it.
+const replayed = (
+  stored: string,
+  ...messages: ReadonlyArray<ReceivedInvitation>
+): string => messages.reduce((ics, message) => changed(message, ics), stored);
+
+// The moved occurrence at another SEQUENCE.
+const occurrenceAt = (sequence: number, partstat = 'NEEDS-ACTION') =>
+  occurrenceEvent(partstat).map((line) =>
+    line === 'SEQUENCE:1' ? `SEQUENCE:${sequence}` : line,
+  );
+
 const myAnswer = /PARTSTAT=(?<partstat>[A-Z-]+);RSVP=TRUE;CN=Me/gu;
 
 const answers = (ics: string) =>
@@ -92,18 +104,76 @@ describe('importChange of an invitation', () => {
     expect(ics).toContain('SEQUENCE:1');
   });
 
-  it('adds a changed occurrence with the answer it needs and includes it again', () => {
+  it.each([
+    'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
+    'EXDATE:20261111T090000Z',
+  ])(
+    'adds a changed occurrence with the answer it needs and includes it again after %s',
+    (exdate) => {
+      const ics = changed(
+        received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
+        storedSeries('ACCEPTED', weekly, exdate),
+      );
+      expect(answers(ics)).toEqual(['ACCEPTED', 'NEEDS-ACTION']);
+      expect(ics).not.toContain('EXDATE');
+      expect(ics).toContain('BEGIN:VTIMEZONE');
+    },
+  );
+
+  it('replaces a changed occurrence the copy names in another time zone', () => {
     const ics = changed(
-      received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
-      storedSeries(
-        'ACCEPTED',
-        weekly,
-        'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
+      received(invitationIcs(...occurrenceAt(2))),
+      withOccurrence(
+        storedSeries('ACCEPTED', weekly),
+        occurrenceEvent('ACCEPTED').map((line) =>
+          line.startsWith('RECURRENCE-ID')
+            ? 'RECURRENCE-ID:20261111T090000Z'
+            : line,
+        ),
       ),
     );
     expect(answers(ics)).toEqual(['ACCEPTED', 'NEEDS-ACTION']);
-    expect(ics).not.toContain('EXDATE');
-    expect(ics).toContain('BEGIN:VTIMEZONE');
+  });
+});
+
+describe('importChange of a series the copy holds changed occurrences of', () => {
+  it('keeps a changed occurrence newer than the series, with its answer and reminders', () => {
+    const ics = changed(
+      received(invitationIcs(...review('SEQUENCE:1', weekly))),
+      withOccurrence(
+        storedSeries('ACCEPTED', weekly),
+        occurrenceAt(3, 'DECLINED').flatMap((line) =>
+          line === 'END:VEVENT'
+            ? [
+                'BEGIN:VALARM',
+                'ACTION:DISPLAY',
+                'DESCRIPTION:Mine',
+                'TRIGGER:-PT2H',
+                'END:VALARM',
+                line,
+              ]
+            : [line],
+        ),
+      ),
+    );
+    expect(answers(ics)).toHaveLength(2);
+    expect(answers(ics)).toContain('DECLINED');
+    expect(ics).toContain('SEQUENCE:3');
+    expect(ics).toContain('DESCRIPTION:Mine');
+  });
+
+  it('takes a newer changed occurrence along with a series the copy holds', () => {
+    const ics = changed(
+      received(
+        invitationIcs(...review('SEQUENCE:0', weekly), ...occurrenceAt(2)),
+      ),
+      withOccurrence(
+        storedSeries('ACCEPTED', weekly),
+        occurrenceEvent('ACCEPTED'),
+      ),
+    );
+    expect(answers(ics)).toEqual(['ACCEPTED', 'NEEDS-ACTION']);
+    expect(ics).toContain('SEQUENCE:2');
   });
 });
 
@@ -123,7 +193,7 @@ describe('importChange of a cancellation', () => {
       stored,
     );
     expect(ics).toContain(
-      'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
+      'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=1:20261111T100000',
     );
     expect(ics).not.toContain('RECURRENCE-ID');
     expect(ics).not.toContain('CANCELLED');
@@ -174,6 +244,31 @@ describe('importChange of a message the copy holds', () => {
       'a cancellation the copy already holds',
       cancellation(...review('SEQUENCE:0')),
       storedCopy('ACCEPTED').replace('STATUS:CONFIRMED', 'STATUS:CANCELLED'),
+    ],
+    [
+      'a cancellation of an occurrence older than the series',
+      cancellation(...occurrenceEvent('NEEDS-ACTION')),
+      storedSeries('ACCEPTED', weekly).replace('SEQUENCE:0', 'SEQUENCE:3'),
+    ],
+    [
+      'an older invitation to an occurrence the copy excludes',
+      received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
+      replayed(
+        withOccurrence(
+          storedSeries('ACCEPTED', weekly),
+          occurrenceEvent('ACCEPTED'),
+        ),
+        cancellation(...occurrenceAt(2)),
+      ),
+    ],
+    [
+      'an invitation older than a repeated cancellation',
+      received(invitationIcs(...review('SEQUENCE:2'))),
+      replayed(
+        storedCopy('ACCEPTED'),
+        cancellation(...review('SEQUENCE:1')),
+        cancellation(...review('SEQUENCE:3')),
+      ),
     ],
   ])('leaves the copy as it is for %s', (_name, invitation, stored) => {
     expect(changeOf(invitation, stored)).toEqual(

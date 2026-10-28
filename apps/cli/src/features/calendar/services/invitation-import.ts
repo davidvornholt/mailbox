@@ -92,7 +92,6 @@ export const newMeetingCalendar = (
       );
 };
 
-// What the message does to the meeting in the user's calendars.
 export const plannedChange = (
   invitation: ReceivedInvitation,
   addresses: ReadonlyArray<string>,
@@ -232,7 +231,6 @@ const writeCopy = (
     Effect.andThen(readCopy(client, copy.calendar, copy.href)),
   );
 
-// Makes the planned change and reads the copy back.
 export const applyImport = (
   client: DavClient,
   account: Account,

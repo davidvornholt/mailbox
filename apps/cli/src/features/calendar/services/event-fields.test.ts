@@ -180,7 +180,7 @@ describe('eventDetail', () => {
             start: '2026-10-27T15:00:00+01:00',
             end: '2026-10-27T16:00:00+01:00',
             status: 'cancelled',
-            attendees: ['hidden@example.com'],
+            attendees: [{ email: 'hidden@example.com' }],
           },
         ],
       },
@@ -188,7 +188,7 @@ describe('eventDetail', () => {
     expect(detail.recurrence?.changed[0]?.summary).toBeUndefined();
   });
 
-  it('lists the changed occurrences of a series without a rule', () => {
+  it('lists the changed occurrences of a series without a rule, with answers that differ', () => {
     const detail = eventDetail(
       parsed(
         ...vevent(
@@ -198,6 +198,7 @@ describe('eventDetail', () => {
           'DTSTART:20261020T090000Z',
           'DTEND:20261020T100000Z',
           'RDATE:20261027T090000Z',
+          'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
         ),
         ...vevent(
           'UID:dates@example.com',
@@ -205,7 +206,7 @@ describe('eventDetail', () => {
           'RECURRENCE-ID:20261027T090000Z',
           'DTSTART:20261027T090000Z',
           'DTEND:20261027T100000Z',
-          'ATTENDEE:mailto:hidden@example.com',
+          'ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com',
         ),
       ),
       { ...context, etag: undefined },
@@ -213,7 +214,11 @@ describe('eventDetail', () => {
     );
     expect(detail.recurrence).toEqual({
       excluded: [],
-      changed: [expect.objectContaining({ attendees: ['hidden@example.com'] })],
+      changed: [
+        expect.objectContaining({
+          attendees: [{ email: 'me@example.com', partstat: 'declined' }],
+        }),
+      ],
     });
   });
 });

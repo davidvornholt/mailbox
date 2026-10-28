@@ -19,7 +19,13 @@ import {
   parseCalendar,
   text,
 } from './event-fields';
-import { answerOf, ownAttendee, type ReceivedInvitation } from './invitation';
+import { addTimezones } from './ical-time';
+import {
+  answerOf,
+  invitedOccurrences,
+  ownAttendee,
+  type ReceivedInvitation,
+} from './invitation';
 
 const calendarConcurrency = 4;
 
@@ -74,8 +80,8 @@ export type InvitationView = {
   // The address the invitation invites the user as.
   readonly attendee?: string;
   readonly event: Omit<EventDetail, 'account' | 'href' | 'etag' | 'ics'>;
-  // The event in the user's calendars, with their answer there. Only
-  // accounts with calendars have them.
+  // The event in the user's calendars, with their answer there to what the
+  // invitation is for. Only accounts with calendars have them.
   readonly copies?: ReadonlyArray<{
     readonly calendar: string;
     readonly href: string;
@@ -120,12 +126,17 @@ export const describeInvitation = (
     ]);
     const calendars = writable(yield* listCalendars(client));
     const copies = yield* findCopies(client, calendars, invitation.uid);
+    const occurrences = invitedOccurrences(invitation);
     return {
       ...view,
       ...(attendee === undefined ? {} : { attendee }),
       copies: copies.map(({ calendar, resource, object }) => {
+        // The copy may lack the zones that name the invited occurrences.
+        addTimezones(object.vcalendar, invitation.object.vcalendar);
         const partstat =
-          attendee === undefined ? undefined : answerOf(object, attendee);
+          attendee === undefined
+            ? undefined
+            : answerOf(object, attendee, occurrences);
         return {
           calendar: calendar.name,
           href: resource.href,

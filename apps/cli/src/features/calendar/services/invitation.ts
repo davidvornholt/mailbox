@@ -3,7 +3,7 @@ import ICAL from 'ical.js';
 import { CalendarDataError } from '../errors/errors';
 import { addressOf, isEmailAddress, organizerAddress } from './event-attendees';
 import { type CalendarObject, parseCalendar, text } from './event-fields';
-import { productId } from './event-write';
+import { timeKey } from './ical-time';
 
 export const partstats = ['accepted', 'tentative', 'declined'] as const;
 export type Partstat = (typeof partstats)[number];
@@ -59,11 +59,22 @@ export const eventsOf = ({
 }: CalendarObject): ReadonlyArray<ICAL.Component> => [master, ...overrides];
 
 // The occurrence an event describes: 'master' for the series, else its
-// RECURRENCE-ID, as sabre/dav names them.
-export const occurrenceKey = (event: ICAL.Component): string =>
-  event.hasProperty('recurrence-id')
-    ? String(event.getFirstPropertyValue('recurrence-id'))
-    : 'master';
+// RECURRENCE-ID.
+export const occurrenceKey = (event: ICAL.Component): string => {
+  const property = event.getFirstProperty('recurrence-id');
+  return property === null
+    ? 'master'
+    : timeKey(property.getFirstValue(), property.getParameter('tzid'));
+};
+
+// The occurrences an invitation to single occurrences is for, by
+// occurrenceKey; none for an invitation to the series.
+export const invitedOccurrences = ({
+  object,
+}: ReceivedInvitation): ReadonlySet<string> | undefined =>
+  object.master.hasProperty('recurrence-id')
+    ? new Set(eventsOf(object).map(occurrenceKey))
+    : undefined;
 
 // The events an answer covers: all of them, or the occurrences named.
 export const answeredEvents = (
@@ -109,12 +120,15 @@ const partstatOf = (property: ICAL.Property): string => {
   return typeof value === 'string' ? value.toLowerCase() : 'needs-action';
 };
 
-// The attendee's answer in the first event that lists them.
+// The attendee's answer in the first of the occurrences given that lists
+// them, or in the series when the object holds none of them.
 export const answerOf = (
   object: CalendarObject,
   attendee: string,
+  occurrences: ReadonlySet<string> | undefined,
 ): string | undefined => {
-  const property = eventsOf(object)
+  const events = answeredEvents(object, occurrences);
+  const property = (events.length === 0 ? eventsOf(object) : events)
     .map((event) => attendeeProperty(event, attendee))
     .find((found) => found !== undefined);
   return property === undefined ? undefined : partstatOf(property);
@@ -278,114 +292,4 @@ export const giveAnswer = (
       .getFirstProperty('organizer')
       ?.setParameter('schedule-force-send', 'REPLY');
   }
-};
-
-const replyProperties = new Set([
-  'uid',
-  'recurrence-id',
-  'sequence',
-  'dtstart',
-  'dtend',
-  'duration',
-  'summary',
-  'organizer',
-  'attendee',
-]);
-
-const schedulingParameters = [
-  'rsvp',
-  'schedule-agent',
-  'schedule-force-send',
-  'schedule-status',
-];
-
-const replyEvent = (
-  vevent: ICAL.Component,
-  attendee: string,
-  { partstat, nowMs }: { readonly partstat: Partstat; readonly nowMs: number },
-): void => {
-  vevent.removeAllSubcomponents();
-  for (const property of [...vevent.getAllProperties()]) {
-    if (
-      !replyProperties.has(property.name) ||
-      (property.name === 'attendee' && addressOf(property) !== attendee)
-    ) {
-      vevent.removeProperty(property);
-    }
-  }
-  for (const property of vevent.getAllProperties()) {
-    for (const name of schedulingParameters) {
-      property.removeParameter(name);
-    }
-  }
-  attendeeProperty(vevent, attendee)?.setParameter(
-    'partstat',
-    partstat.toUpperCase(),
-  );
-  vevent.addPropertyWithValue(
-    'dtstamp',
-    ICAL.Time.fromJSDate(new Date(nowMs), true),
-  );
-};
-
-// The iTIP REPLY (RFC 5546, section 3.2.3) that gives the attendee's answer
-// for each event of the invitation that lists them.
-export const replyIcs = (
-  invitation: ReceivedInvitation,
-  attendee: string,
-  answer: { readonly partstat: Partstat; readonly nowMs: number },
-): string => {
-  const vcalendar = copyOf(invitation.object.vcalendar);
-  vcalendar.removeAllProperties();
-  vcalendar.addPropertyWithValue('version', '2.0');
-  vcalendar.addPropertyWithValue('prodid', productId);
-  vcalendar.addPropertyWithValue('method', 'REPLY');
-  for (const component of [...vcalendar.getAllSubcomponents()]) {
-    if (
-      component.name === 'vevent' &&
-      attendeeProperty(component, attendee) !== undefined
-    ) {
-      replyEvent(component, attendee, answer);
-    } else if (component.name !== 'vtimezone') {
-      vcalendar.removeSubcomponent(component);
-    }
-  }
-  return vcalendar.toString();
-};
-
-const answerWords: Record<
-  Partstat,
-  { readonly subject: string; readonly verb: string }
-> = {
-  accepted: { subject: 'Accepted', verb: 'accepted' },
-  tentative: { subject: 'Tentative', verb: 'tentatively accepted' },
-  declined: { subject: 'Declined', verb: 'declined' },
-};
-
-// An email that answers an invitation, for the user to send.
-export type InvitationReply = {
-  readonly to: string;
-  readonly subject: string;
-  readonly text: string;
-  readonly ics: string;
-};
-
-export const invitationReply = (
-  invitation: ReceivedInvitation,
-  { attendee, organizer }: Parties,
-  answer: {
-    readonly name: string;
-    readonly partstat: Partstat;
-    readonly nowMs: number;
-  },
-): InvitationReply => {
-  const words = answerWords[answer.partstat];
-  const summary = text(invitation.object.master, 'summary');
-  return {
-    to: organizer,
-    subject:
-      summary === undefined ? words.subject : `${words.subject}: ${summary}`,
-    text: `${answer.name.trim() || attendee} has ${words.verb} this invitation.\n`,
-    ics: replyIcs(invitation, attendee, answer),
-  };
 };

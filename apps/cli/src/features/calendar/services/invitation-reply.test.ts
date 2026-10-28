@@ -27,6 +27,7 @@ import {
   storedCopy,
   storedSeries,
   weekly,
+  withOccurrence,
 } from './invitation-reply.fixture';
 
 const answered = (accepted: string) => ({
@@ -321,5 +322,25 @@ describe('describeInvitation', () => {
         },
       ],
     });
+  });
+
+  it('shows the answer to the occurrence an invitation is for', async () => {
+    const { value } = await succeedsOnFakeDav(
+      routesWith(
+        copies([
+          copyHref,
+          withOccurrence(
+            storedSeries('ACCEPTED', weekly),
+            occurrenceEvent('DECLINED'),
+          ),
+        ]),
+      ),
+      describeInvitation(
+        davAccount,
+        received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
+        berlin,
+      ),
+    );
+    expect(value.copies?.map(({ partstat }) => partstat)).toEqual(['declined']);
   });
 });

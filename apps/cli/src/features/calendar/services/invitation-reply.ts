@@ -23,9 +23,7 @@ import {
   attendeeProperty,
   eventsOf,
   giveAnswer,
-  type InvitationReply,
-  invitationReply,
-  occurrenceKey,
+  invitedOccurrences,
   ownAttendees,
   type Parties,
   type Partstat,
@@ -42,6 +40,10 @@ import {
   plannedChange,
   plannedCopy,
 } from './invitation-import';
+import {
+  type InvitationReply,
+  invitationReply,
+} from './invitation-reply-email';
 import { userAddresses } from './scheduling';
 
 export type InvitationAnswer = {
@@ -305,9 +307,7 @@ export const answerInvitation = (
           attendee: parties.attendee,
           addresses,
           partstat,
-          occurrences: invitation.object.master.hasProperty('recurrence-id')
-            ? new Set(eventsOf(invitation.object).map(occurrenceKey))
-            : undefined,
+          occurrences: invitedOccurrences(invitation),
         },
       },
       local,
