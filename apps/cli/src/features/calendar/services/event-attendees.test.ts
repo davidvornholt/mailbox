@@ -20,6 +20,15 @@ describe('otherAttendees', () => {
       [],
     ],
     [
+      "a guest whose address escapes a letter of the organizer's",
+      vevent(
+        'UID:a',
+        'ORGANIZER:mailto:me@example.com',
+        'ATTENDEE:mailto:%6De@example.com',
+      ),
+      ['%6de@example.com'],
+    ],
+    [
       'a guest',
       vevent(
         'UID:a',

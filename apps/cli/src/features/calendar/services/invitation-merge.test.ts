@@ -321,19 +321,16 @@ describe('importChange refusals', () => {
       ),
       'REPLY',
     ],
-    ...['mailto:me@example.com', 'mailto:%6De@example.com'].map(
-      (organizer) =>
-        [
-          `the user's own meeting as ${organizer}`,
-          received(
-            invitationIcs(...review()).replace(
-              'mailto:boss@example.com',
-              organizer,
-            ),
-          ),
-          'pim calendar update',
-        ] as const,
-    ),
+    [
+      "the user's own meeting",
+      received(
+        invitationIcs(...review()).replace(
+          'mailto:boss@example.com',
+          'mailto:me@example.com',
+        ),
+      ),
+      'pim calendar update',
+    ],
     [
       'a change to an occurrence and all later ones',
       received(

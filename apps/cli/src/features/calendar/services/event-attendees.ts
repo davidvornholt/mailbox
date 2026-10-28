@@ -1,6 +1,5 @@
 import { Result } from 'effect';
 import ICAL from 'ical.js';
-import { decodePercent } from '../../../shared/dav/collections';
 import type { CalendarObject } from './event-fields';
 
 // The user as the organizer of a meeting, with an address the server
@@ -22,14 +21,8 @@ export const isEmailAddress = (email: string): boolean =>
 
 const keyOf = (email: string): string => email.trim().toLowerCase();
 
-// Decoded as discovery decodes the user's addresses, so that the user is
-// found under any address the server takes as theirs.
 export const addressOf = (property: ICAL.Property): string =>
-  keyOf(
-    decodePercent(
-      String(property.getFirstValue() ?? '').replace(mailtoScheme, ''),
-    ),
-  );
+  keyOf(String(property.getFirstValue() ?? '').replace(mailtoScheme, ''));
 
 export const organizerAddress = (
   component: ICAL.Component,
