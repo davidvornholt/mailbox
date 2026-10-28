@@ -88,14 +88,13 @@ export type ContactTarget = {
   readonly etag: string;
 };
 
-const groupKinds = new Set(['group']);
-
 // Contact groups list their members by UID, and contact apps keep them in
 // sync; pim changes single contacts only.
 const isGroup = (card: ICAL.Component): boolean =>
-  groupKinds.has(firstText(card, 'kind')?.toLowerCase() ?? '') ||
-  groupKinds.has(
-    firstText(card, 'x-addressbookserver-kind')?.toLowerCase() ?? '',
+  ['kind', 'x-addressbookserver-kind'].some((name) =>
+    card
+      .getAllProperties(name)
+      .some((kind) => String(kind.getFirstValue()).toLowerCase() === 'group'),
   );
 
 // The contact at the target's href, provided it is still the version the
@@ -159,13 +158,14 @@ export const updateContact = (
       return yield* new ContactChangeError({ href, message: applied.failure });
     }
     const vcard = applied.success;
-    const newEtag = yield* replaceContactResource(client, href, vcard, etag);
-    return yield* detailOf({
-      account: account.email,
-      href,
-      etag: newEtag,
-      vcard,
-    });
+    const detail = (newEtag: string | undefined) =>
+      detailOf({ account: account.email, href, etag: newEtag, vcard });
+    // Reading the result before the write makes a contact pim cannot read
+    // fail before it changes anything.
+    yield* detail(undefined);
+    return yield* detail(
+      yield* replaceContactResource(client, href, vcard, etag),
+    );
   });
 
 export const deleteContact = (

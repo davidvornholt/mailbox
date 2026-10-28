@@ -66,8 +66,6 @@ describe('newVCard', () => {
   });
 });
 
-const removedFields = /^(?:ORG|TITLE|NOTE)/u;
-
 const appleCard = cardOf(
   'FN:Ada Lovelace',
   'N:Lovelace;Ada;;;',
@@ -75,6 +73,12 @@ const appleCard = cardOf(
   'item1.X-ABLabel:_$!<Work>!$_',
   'item2.EMAIL:other@example.org',
   'item2.X-ABLabel:home',
+  'item3.EMAIL:shared@example.org',
+  'item3.TEL:+1 555 0100',
+  'item3.X-ABLabel:office',
+  'item4.EMAIL:old@example.org',
+  'item4.X-ABLabel:old',
+  'item4.X-Custom:keep',
   'TEL;type=CELL:+49 (170) 123-4567',
   'REV:20200101T000000Z',
 );
@@ -84,7 +88,11 @@ describe('applyContactChanges', () => {
     expect(
       changed(appleCard, {
         addEmails: ['new@example.org', 'OTHER@example.org'],
-        removeEmails: ['ADA@example.org'],
+        removeEmails: [
+          'ADA@example.org',
+          'shared@example.org',
+          'old@example.org',
+        ],
         removePhones: ['+491701234567'],
       }),
     ).toEqual([
@@ -94,6 +102,10 @@ describe('applyContactChanges', () => {
       'N:Lovelace;Ada;;;',
       'item2.EMAIL:other@example.org',
       'item2.X-ABLabel:home',
+      'item3.TEL:+1 555 0100',
+      'item3.X-ABLabel:office',
+      'item4.X-ABLabel:old',
+      'item4.X-Custom:keep',
       'EMAIL:new@example.org',
       'REV:20261028T091500Z',
       'END:VCARD',
@@ -136,11 +148,23 @@ describe('applyContactChanges', () => {
 
   it('removes text fields given as empty', () => {
     const card = cardOf('FN:Ada', 'ORG:Engines', 'TITLE:Analyst', 'NOTE:x');
-    const result = changed(card, { organization: '', title: '', note: '' });
-    expect(result).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(removedFields)]),
-    );
+    expect(changed(card, { organization: '', title: '', note: '' })).toEqual([
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'FN:Ada',
+      'REV:20261028T091500Z',
+      'END:VCARD',
+    ]);
   });
+
+  it.each(['N;X-A=1;X-A=2:Lovelace;Ada;;;', 'N:Lovelace,Byron'])(
+    'refuses to change the name parts of %p, which it cannot write back as stored',
+    (line) => {
+      expect(changed(cardOf('FN:Ada', line), { givenName: 'Augusta' })).toBe(
+        'pim cannot change the name parts without rewriting the rest of the stored N line, so it leaves the contact alone; the user can change the name in a contacts app',
+      );
+    },
+  );
 
   it.each([
     [

@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import type { DavRequestError } from '../errors/dav';
+import { DavError, type DavRequestError } from '../errors/dav';
 import type { DavClient } from './client';
 
 // A calendar object or contact as pim stores it.
@@ -36,6 +36,22 @@ export const createResource = (
 ): Effect.Effect<string | undefined, DavRequestError> =>
   put(client, resource, { 'if-none-match': '*' });
 
+const singleEntityTag = /^(?:W\/)?"[^"]*"$/u;
+
+// The If-Match header for one version. An If-Match of * or of a list of
+// ETags would also match versions the caller never read.
+const ifMatch = (
+  href: string,
+  etag: string,
+): Effect.Effect<Readonly<Record<string, string>>, DavError> =>
+  singleEntityTag.test(etag)
+    ? Effect.succeed({ 'if-match': etag })
+    : Effect.fail(
+        new DavError({
+          message: `The etag ${etag} names no single version of ${href}, so pim cannot make sure it changes only the version you read`,
+        }),
+      );
+
 // Replaces the resource only while the server still holds the version with
 // this ETag.
 export const replaceResource = (
@@ -43,7 +59,9 @@ export const replaceResource = (
   resource: ResourceBody,
   etag: string,
 ): Effect.Effect<string | undefined, DavRequestError> =>
-  put(client, resource, { 'if-match': etag });
+  ifMatch(resource.href, etag).pipe(
+    Effect.flatMap((precondition) => put(client, resource, precondition)),
+  );
 
 // Deletes the resource only while the server still holds the version with
 // this ETag.
@@ -53,6 +71,13 @@ export const deleteResource = (
   etag: string,
   headers: Readonly<Record<string, string>> = {},
 ): Effect.Effect<void, DavRequestError> =>
-  client
-    .send({ method: 'DELETE', href, headers: { ...headers, 'if-match': etag } })
-    .pipe(Effect.asVoid);
+  ifMatch(href, etag).pipe(
+    Effect.flatMap((precondition) =>
+      client.send({
+        method: 'DELETE',
+        href,
+        headers: { ...headers, ...precondition },
+      }),
+    ),
+    Effect.asVoid,
+  );

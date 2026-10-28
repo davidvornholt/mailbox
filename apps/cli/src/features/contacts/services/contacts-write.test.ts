@@ -140,40 +140,49 @@ describe('updateContact', () => {
     expect(put?.body).toContain('TEL:+49 170 1234567');
   });
 
+  const retitled = changes({ title: 'Analyst' });
+
   it.each([
     [
       'a contact that changed since it was read',
       contactRoutes(stored, { etag: '"v9"' }),
+      retitled,
       'DavConflictError',
     ],
     [
       'a contact the server gives no etag for',
       contactRoutes(stored, {}),
+      retitled,
       'ContactChangeError',
     ],
     [
       'a contact group',
       contactRoutes(vcardOf('FN:Team', 'X-ADDRESSBOOKSERVER-KIND:group')),
+      retitled,
       'ContactChangeError',
     ],
     [
       'a vCard 2.1',
       contactRoutes(stored.replace('VERSION:3.0', 'VERSION:2.1')),
+      retitled,
       'ContactChangeError',
     ],
     [
       'removing an address the contact lacks',
       contactRoutes(stored),
+      changes({ removeEmails: ['nobody@example.org'] }),
       'ContactChangeError',
     ],
-  ])('refuses %s', async (_name, routes, tag) => {
+    [
+      'a contact pim cannot read back',
+      contactRoutes(vcardOf('UID:a', 'FN:Ada', 'BDAY:garbage')),
+      retitled,
+      'ContactDataError',
+    ],
+  ])('refuses %s', async (_name, routes, wanted, tag) => {
     const { error, requests } = await failsOnFakeDav(
       routes,
-      updateContact(
-        davAccount,
-        target,
-        changes({ removeEmails: ['nobody@example.org'] }),
-      ),
+      updateContact(davAccount, target, wanted),
     );
     expect(error).toMatchObject({ _tag: tag });
     expect(writeRequests(requests)).toEqual([]);
@@ -203,10 +212,22 @@ describe('deleteContact', () => {
 
   it('refuses a contact group', async () => {
     const { error, requests } = await failsOnFakeDav(
-      contactRoutes(vcardOf('FN:Team', 'KIND:group')),
+      contactRoutes(vcardOf('FN:Team', 'KIND:individual', 'KIND:group')),
       deleteContact(davAccount, target),
     );
     expect(error._tag).toBe('ContactChangeError');
     expect(writeRequests(requests)).toEqual([]);
   });
+
+  it.each(['*', '"v1", "v2"'])(
+    'refuses the etag %p, which names no single version',
+    async (etag) => {
+      const { error, requests } = await failsOnFakeDav(
+        contactRoutes(stored, { etag }),
+        deleteContact(davAccount, { href, etag }),
+      );
+      expect(error._tag).toBe('DavError');
+      expect(writeRequests(requests)).toEqual([]);
+    },
+  );
 });

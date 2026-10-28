@@ -99,8 +99,8 @@ const groupOf = (property: ICAL.Property): string | undefined => {
   return typeof group === 'string' ? group.toLowerCase() : undefined;
 };
 
-// Removes the property and the labels Apple keeps in its group, such as
-// item1.X-ABLabel for item1.EMAIL.
+// Removes the property, and the labels Apple keeps in its group, such as
+// item1.X-ABLabel for item1.EMAIL, once the group holds nothing else.
 const removeWithLabels = (
   card: ICAL.Component,
   property: ICAL.Property,
@@ -110,11 +110,12 @@ const removeWithLabels = (
   if (group === undefined) {
     return;
   }
-  // getAllProperties() without a name returns the component's own list, so
-  // the loop reads a copy while it removes.
-  for (const other of [...card.getAllProperties()]) {
-    if (groupOf(other) === group && other.name.startsWith('x-')) {
-      card.removeProperty(other);
+  const rest = card
+    .getAllProperties()
+    .filter((other) => groupOf(other) === group);
+  if (rest.every((other) => other.name === 'x-ablabel')) {
+    for (const label of rest) {
+      card.removeProperty(label);
     }
   }
 };
@@ -225,6 +226,19 @@ const storedProperties = (
     : undefined;
 };
 
+const fold = /\r\n[ \t]/gu;
+
+// Whether ical.js writes the property as stored, apart from the case of its
+// name, group, and parameter names. N is changed in place, so this tells
+// whether the parts pim keeps survive the change; ical.js merges repeated
+// parameters and reads N:A,B as two parts.
+const writtenAsStored = (
+  property: ICAL.Property,
+  stored: ReadonlyMap<ICAL.Property, StoredProperty>,
+): boolean =>
+  stored.get(property)?.text.replace(fold, '').toLowerCase() ===
+  property.toICALString().toLowerCase();
+
 // ical.js does not write every vCard back as it read it: it drops
 // VALUE=uri from vCard 4 phone numbers and the escape from a one-part
 // value such as ORG:A\;B. So properties pim did not change keep their
@@ -286,6 +300,12 @@ export const applyContactChanges = (
   addValues(card, 'email', changes.addEmails, emailKey);
   addValues(card, 'tel', changes.addPhones, phoneKey);
   if (changes.givenName !== undefined || changes.familyName !== undefined) {
+    const nameProperty = card.getFirstProperty('n');
+    if (nameProperty !== null && !writtenAsStored(nameProperty, stored)) {
+      return Result.fail(
+        'pim cannot change the name parts without rewriting the rest of the stored N line, so it leaves the contact alone; the user can change the name in a contacts app',
+      );
+    }
     setNameParts(card, changes);
   }
   setTexts(card, changes);
