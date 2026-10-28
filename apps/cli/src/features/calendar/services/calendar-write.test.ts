@@ -122,6 +122,18 @@ describe('updateEvent', () => {
       'SchedulingUnsupportedError',
     ],
     [
+      'a meeting with an attendee the server does not email',
+      eventRoutes(
+        icsOf(
+          ...meeting.map((line) =>
+            line.replace('ATTENDEE;', 'ATTENDEE;SCHEDULE-AGENT=CLIENT;'),
+          ),
+        ),
+      ),
+      target({ notifyAttendees: true }),
+      'SchedulingUnsupportedError',
+    ],
+    [
       '--notify-attendees for an event without attendees',
       eventRoutes(icsOf(...single)),
       target({ notifyAttendees: true }),

@@ -252,6 +252,23 @@ describe('applyChanges to a meeting', () => {
     );
   });
 
+  it('keeps the replies when the times stay the same', () => {
+    const { result, ics } = changed(
+      objectOf(...meeting.slice(0, -1), ...guests, 'END:VEVENT'),
+      {
+        title: 'Planning, final',
+        start: { _tag: 'Instant', ms: Date.parse('2026-10-28T09:00:00Z') },
+        end: { _tag: 'Instant', ms: Date.parse('2026-10-28T10:30:00Z') },
+      },
+    );
+    expect(result).toEqual(Result.void);
+    expect(ics).toContain('DTSTART;TZID=Europe/Berlin:20261028T100000');
+    expect(ics).toContain('SEQUENCE:2');
+    expect(ics).toContain(
+      'ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:ana@example.com',
+    );
+  });
+
   it('invites and takes off attendees on the series and its occurrences', () => {
     const withGuests = (event: ReadonlyArray<string>) => [
       ...event.slice(0, -1),

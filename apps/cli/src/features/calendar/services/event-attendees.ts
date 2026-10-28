@@ -48,8 +48,28 @@ export const otherAttendees = (
   return [...found];
 };
 
-// The new attendees, each once, provided each is an email address and none
-// is taken, as the organizer's and the current attendees' addresses are.
+// The attendees the server does not email, as their SCHEDULE-AGENT leaves
+// that to a calendar app (RFC 6638, section 7.1).
+export const unscheduledAttendees = (
+  vcalendar: ICAL.Component,
+): ReadonlyArray<string> => {
+  const found = new Set<string>();
+  for (const vevent of vcalendar.getAllSubcomponents('vevent')) {
+    const organizer = organizerAddress(vevent);
+    for (const property of vevent.getAllProperties('attendee')) {
+      const agent = property.getParameter('schedule-agent');
+      if (
+        typeof agent === 'string' &&
+        agent.toUpperCase() !== 'SERVER' &&
+        addressOf(property) !== organizer
+      ) {
+        found.add(addressOf(property));
+      }
+    }
+  }
+  return [...found];
+};
+
 export const newAttendees = (
   emails: ReadonlyArray<string>,
   taken: ReadonlySet<string>,
@@ -73,8 +93,6 @@ export type AttendeeChanges = {
   readonly removed: ReadonlySet<string>;
 };
 
-// The attendees to add to the series and to take off it, provided each
-// change applies.
 export const attendeeChanges = (
   master: ICAL.Component,
   add: ReadonlyArray<string>,
@@ -135,8 +153,6 @@ export const addAttendees = (
   }
 };
 
-// Invites and takes off attendees on the series and on each changed
-// occurrence, and returns the events it changed.
 export const changeAttendees = (
   { master, overrides }: CalendarObject,
   { added, removed }: AttendeeChanges,

@@ -123,6 +123,11 @@ describe('createEvent with attendees', () => {
   });
 });
 
+// A meeting whose last message to Ana failed (RFC 6638, section 3.2.9).
+const undelivered = meeting.map((line) =>
+  line.replace('PARTSTAT=ACCEPTED', 'PARTSTAT=ACCEPTED;SCHEDULE-STATUS=5.1'),
+);
+
 describe('updateEvent of a meeting', () => {
   const stored = (...lines: ReadonlyArray<string>): Routes => ({
     ...eventRoutes(icsOf(...meeting)),
@@ -163,6 +168,33 @@ describe('updateEvent of a meeting', () => {
     });
   });
 
+  it('reports no delivery when it cannot read the event back', async () => {
+    const { value } = await succeedsOnFakeDav(
+      {
+        ...eventRoutes(icsOf(...undelivered)),
+        [`GET ${href}`]: [
+          {
+            status: 200,
+            body: icsOf(...undelivered),
+            headers: { etag: '"v1"' },
+          },
+          { status: 503 },
+        ],
+      },
+      updateEvent(
+        davAccount,
+        target({ notifyAttendees: true }),
+        { title: 'Renamed' },
+        berlin,
+      ),
+    );
+    expect(value).toMatchObject({ etag: '"v2"', summary: 'Renamed' });
+    expect(value.attendees[1]).toEqual({
+      email: 'ana@example.com',
+      partstat: 'accepted',
+    });
+  });
+
   it('invites attendees to an event and makes the user its organizer', async () => {
     const { requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...single)),
@@ -197,10 +229,11 @@ describe('updateEvent of a meeting', () => {
 
 describe('deleteEvent of a meeting', () => {
   it('cancels a meeting the user organizes with --notify-attendees', async () => {
-    const { requests } = await succeedsOnFakeDav(
-      eventRoutes(icsOf(...meeting)),
+    const { value, requests } = await succeedsOnFakeDav(
+      eventRoutes(icsOf(...undelivered)),
       deleteEvent(davAccount, target({ notifyAttendees: true }), berlin),
     );
+    expect(value.attendees[1]).not.toHaveProperty('scheduleStatus');
     const [deletion] = writeRequests(requests);
     expect(deletion?.method).toBe('DELETE');
     expect(deletion?.headers.get('schedule-reply')).toBeNull();

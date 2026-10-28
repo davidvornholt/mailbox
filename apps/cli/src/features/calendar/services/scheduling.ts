@@ -13,6 +13,7 @@ import {
   type Organizer,
   organizerAddress,
   otherAttendees,
+  unscheduledAttendees,
 } from './event-attendees';
 import type { CalendarObject } from './event-fields';
 
@@ -60,10 +61,39 @@ export const meetingOrganizer = (
 export type EventWrite = {
   readonly href: string;
   readonly object: CalendarObject;
-  // The write adds attendees.
   readonly invites: boolean;
-  // The user asked to notify the attendees.
   readonly notifyAttendees: boolean;
+};
+
+// Why pim does not change the meeting although the user asked to notify its
+// attendees: someone else organizes it, or the server would not email some
+// attendees.
+const meetingRefusal = (
+  account: Account,
+  { href, object }: Pick<EventWrite, 'href' | 'object'>,
+  addresses: ReadonlyArray<string>,
+): EventHasAttendeesError | SchedulingUnsupportedError | undefined => {
+  const events = [object.master, ...object.overrides];
+  const other = events
+    .map((event) => organizerAddress(event))
+    .find((address) => address !== undefined && !addresses.includes(address));
+  const unorganized = events.some(
+    (event) =>
+      organizerAddress(event) === undefined && event.hasProperty('attendee'),
+  );
+  if (other !== undefined || unorganized) {
+    return new EventHasAttendeesError({
+      href,
+      message: `${href} is a meeting organized by ${other ?? 'no one'}, not by ${account.email}. pim changes only meetings the user organizes; the user can reply to it in a calendar app`,
+    });
+  }
+  const unscheduled = unscheduledAttendees(object.vcalendar);
+  return unscheduled.length === 0
+    ? undefined
+    : new SchedulingUnsupportedError({
+        href,
+        message: `The server does not email ${unscheduled.join(', ')} about ${href}, as a calendar app handles that (SCHEDULE-AGENT, RFC 6638). pim changes no such meeting; the user can change it in that app`,
+      });
 };
 
 // The organizer the server emails the attendees as, when the write makes it
@@ -98,19 +128,9 @@ export const writeOrganizer = (
       account,
       href,
     );
-    const events = [object.master, ...object.overrides];
-    const other = events
-      .map((event) => organizerAddress(event))
-      .find((address) => address !== undefined && !addresses.includes(address));
-    const unorganized = events.some(
-      (event) =>
-        organizerAddress(event) === undefined && event.hasProperty('attendee'),
-    );
-    if (other !== undefined || unorganized) {
-      return yield* new EventHasAttendeesError({
-        href,
-        message: `${href} is a meeting organized by ${other ?? 'no one'}, not by ${account.email}. pim changes only meetings the user organizes; the user can reply to it in a calendar app`,
-      });
+    const refusal = meetingRefusal(account, { href, object }, addresses);
+    if (refusal !== undefined) {
+      return yield* refusal;
     }
     return organizer;
   });

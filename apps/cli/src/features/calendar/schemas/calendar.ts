@@ -45,6 +45,8 @@ export type EventChange = {
   readonly summary?: string;
   readonly status?: string;
   readonly location?: string;
+  // Set when the occurrence has other attendees than the series.
+  readonly attendees?: ReadonlyArray<string>;
 };
 
 export type EventDetail = {

@@ -23,7 +23,6 @@ export type EventText = {
   readonly description?: string;
 };
 
-// The organizer and the attendees a scheduling server invites.
 export type Invitation = {
   readonly organizer: Organizer;
   readonly attendees: ReadonlyArray<string>;
@@ -39,7 +38,6 @@ export type NewEvent = EventText & {
 export type EventChanges = EventText & {
   readonly start?: EventTime;
   readonly end?: EventTime;
-  // Addresses to invite to the event or to take off it.
   readonly addAttendees?: ReadonlyArray<string>;
   readonly removeAttendees?: ReadonlyArray<string>;
 };
@@ -145,6 +143,14 @@ const currentSpan = (
   };
 };
 
+const sameSpan = (a: EventSpan, b: EventSpan): boolean =>
+  a._tag === 'Days' && b._tag === 'Days'
+    ? daysBetween(a.first, b.first) === 0 && daysBetween(a.last, b.last) === 0
+    : a._tag === 'Times' &&
+      b._tag === 'Times' &&
+      a.startMs === b.startMs &&
+      a.endMs === b.endMs;
+
 const bumpSequence = (component: ICAL.Component): void => {
   const sequence = Number(component.getFirstPropertyValue('sequence') ?? 0);
   component.updatePropertyWithValue(
@@ -201,8 +207,9 @@ export const applyChanges = (
     );
   }
   registerIanaZones(vcalendar);
+  const current = currentSpan(master, local);
   const span = movesTime
-    ? changedSpan(currentSpan(master, local), changes.start, changes.end)
+    ? changedSpan(current, changes.start, changes.end)
     : undefined;
   if (span !== undefined && Result.isFailure(span)) {
     return Result.fail(span.failure);
@@ -216,7 +223,7 @@ export const applyChanges = (
     return Result.fail(attendees.failure);
   }
   const changed = applyText(object, changes);
-  if (span !== undefined) {
+  if (span !== undefined && !sameSpan(span.success, current)) {
     setSpan(master, span.success);
     bumpSequence(master);
     resetReplies(master);

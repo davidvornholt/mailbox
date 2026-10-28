@@ -64,6 +64,15 @@ const detailOf = (
     ),
   );
 
+// A status the server noted for an earlier message would read as the
+// outcome of this write.
+const withoutDelivery = (detail: EventDetail): EventDetail => ({
+  ...detail,
+  attendees: detail.attendees.map(
+    ({ scheduleStatus: _earlier, ...attendee }) => attendee,
+  ),
+});
+
 // The event as the server stored it after a write that notified attendees.
 // The server notes how it delivered each message (RFC 6638, section 3.2.9)
 // and, as it changed the data, may give the new etag only on a read. The
@@ -81,7 +90,7 @@ const storedDetail = (
         local,
       ),
     ),
-    Effect.orElseSucceed(() => written),
+    Effect.orElseSucceed(() => withoutDelivery(written)),
   );
 
 export type NewEventRequest = EventText & {
@@ -302,5 +311,5 @@ export const deleteEvent = (
       target.etag,
       organizer !== undefined,
     );
-    return detail;
+    return withoutDelivery(detail);
   });

@@ -113,6 +113,17 @@ const attendeesOf = (component: ICAL.Component): ReadonlyArray<Attendee> =>
     ...optional('scheduleStatus', parameter(property, 'schedule-status')),
   }));
 
+const attendeeSet = (component: ICAL.Component): string =>
+  [
+    ...new Set(
+      component
+        .getAllProperties('attendee')
+        .map((property) => address(property).toLowerCase()),
+    ),
+  ]
+    .toSorted()
+    .join(' ');
+
 const lastDay = (start: ICAL.Time, end: ICAL.Time): ICAL.Time => {
   const day = end.clone();
   day.adjust(-1, 0, 0, 0);
@@ -212,6 +223,12 @@ const changeOf = (
     ...optional('summary', differs('summary')),
     ...optional('status', lowercase(differs('status'))),
     ...optional('location', differs('location')),
+    ...optional(
+      'attendees',
+      attendeeSet(override.component) === attendeeSet(master)
+        ? undefined
+        : override.component.getAllProperties('attendee').map(address),
+    ),
   };
 };
 
