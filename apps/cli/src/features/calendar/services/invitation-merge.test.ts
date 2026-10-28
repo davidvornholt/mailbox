@@ -212,6 +212,92 @@ describe('importChange of a cancellation', () => {
   });
 });
 
+const unchangedCopies: ReadonlyArray<
+  readonly [string, ReceivedInvitation, string]
+> = [
+  ['an invitation the copy already holds', received(), storedCopy('ACCEPTED')],
+  [
+    'an older invitation',
+    received(),
+    storedCopy('ACCEPTED').replace('SEQUENCE:0', 'SEQUENCE:2'),
+  ],
+  [
+    'an older cancellation',
+    cancellation(...review('SEQUENCE:1')),
+    storedCopy('ACCEPTED').replace('SEQUENCE:0', 'SEQUENCE:2'),
+  ],
+  [
+    'a cancellation the copy already holds',
+    cancellation(...review('SEQUENCE:0')),
+    storedCopy('ACCEPTED').replace('STATUS:CONFIRMED', 'STATUS:CANCELLED'),
+  ],
+  [
+    'a cancellation of an occurrence older than the series',
+    cancellation(...occurrenceEvent('NEEDS-ACTION')),
+    storedSeries('ACCEPTED', weekly).replace('SEQUENCE:0', 'SEQUENCE:3'),
+  ],
+  [
+    'an older invitation to an occurrence the copy excludes',
+    received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
+    replayed(
+      withOccurrence(
+        storedSeries('ACCEPTED', weekly),
+        occurrenceEvent('ACCEPTED'),
+      ),
+      cancellation(...occurrenceAt(2)),
+    ),
+  ],
+  [
+    'a cancellation of an occurrence older than its changed version',
+    cancellation(...occurrenceEvent('NEEDS-ACTION')),
+    withOccurrence(
+      storedSeries('ACCEPTED', weekly),
+      occurrenceEvent('ACCEPTED').map((line) =>
+        line === 'DTSTAMP:20261028T080000Z' ? 'DTSTAMP:20261029T080000Z' : line,
+      ),
+    ),
+  ],
+  [
+    'an invitation to an occurrence older than its cancellation, after a series update that excludes it',
+    received(invitationIcs(...occurrenceAt(4))),
+    replayed(
+      storedSeries('ACCEPTED', weekly),
+      cancellation(...occurrenceAt(5)),
+      received(
+        invitationIcs(
+          ...review(
+            'SEQUENCE:3',
+            weekly,
+            'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
+          ),
+        ),
+      ),
+    ),
+  ],
+  [
+    'an invitation to an occurrence older than its cancellation, after a series update that does not exclude it',
+    received(invitationIcs(...occurrenceAt(6))),
+    replayed(
+      storedSeries(
+        'ACCEPTED',
+        weekly,
+        'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=7:20261111T100000',
+        'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=5:20261111T100000,20261118T100000',
+      ),
+      received(invitationIcs(...review('SEQUENCE:3', weekly))),
+    ),
+  ],
+  [
+    'an invitation older than a repeated cancellation',
+    received(invitationIcs(...review('SEQUENCE:2'))),
+    replayed(
+      storedCopy('ACCEPTED'),
+      cancellation(...review('SEQUENCE:1')),
+      cancellation(...review('SEQUENCE:3')),
+    ),
+  ],
+];
+
 describe('importChange of a message the copy holds', () => {
   it('finishes a copy that pim stopped writing halfway', () => {
     const ics = changed(
@@ -224,99 +310,14 @@ describe('importChange of a message the copy holds', () => {
     expect(ics).not.toContain('SCHEDULE-AGENT');
   });
 
-  it.each([
-    [
-      'an invitation the copy already holds',
-      received(),
-      storedCopy('ACCEPTED'),
-    ],
-    [
-      'an older invitation',
-      received(),
-      storedCopy('ACCEPTED').replace('SEQUENCE:0', 'SEQUENCE:2'),
-    ],
-    [
-      'an older cancellation',
-      cancellation(...review('SEQUENCE:1')),
-      storedCopy('ACCEPTED').replace('SEQUENCE:0', 'SEQUENCE:2'),
-    ],
-    [
-      'a cancellation the copy already holds',
-      cancellation(...review('SEQUENCE:0')),
-      storedCopy('ACCEPTED').replace('STATUS:CONFIRMED', 'STATUS:CANCELLED'),
-    ],
-    [
-      'a cancellation of an occurrence older than the series',
-      cancellation(...occurrenceEvent('NEEDS-ACTION')),
-      storedSeries('ACCEPTED', weekly).replace('SEQUENCE:0', 'SEQUENCE:3'),
-    ],
-    [
-      'an older invitation to an occurrence the copy excludes',
-      received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
-      replayed(
-        withOccurrence(
-          storedSeries('ACCEPTED', weekly),
-          occurrenceEvent('ACCEPTED'),
-        ),
-        cancellation(...occurrenceAt(2)),
-      ),
-    ],
-    [
-      'a cancellation of an occurrence older than its changed version',
-      cancellation(...occurrenceEvent('NEEDS-ACTION')),
-      withOccurrence(
-        storedSeries('ACCEPTED', weekly),
-        occurrenceEvent('ACCEPTED').map((line) =>
-          line === 'DTSTAMP:20261028T080000Z'
-            ? 'DTSTAMP:20261029T080000Z'
-            : line,
-        ),
-      ),
-    ],
-    [
-      'an invitation to an occurrence older than its cancellation, after a series update that excludes it',
-      received(invitationIcs(...occurrenceAt(4))),
-      replayed(
-        storedSeries('ACCEPTED', weekly),
-        cancellation(...occurrenceAt(5)),
-        received(
-          invitationIcs(
-            ...review(
-              'SEQUENCE:3',
-              weekly,
-              'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
-            ),
-          ),
-        ),
-      ),
-    ],
-    [
-      'an invitation to an occurrence older than its cancellation, after a series update that does not exclude it',
-      received(invitationIcs(...occurrenceAt(6))),
-      replayed(
-        storedSeries(
-          'ACCEPTED',
-          weekly,
-          'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=7:20261111T100000',
-          'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=5:20261111T100000,20261118T100000',
-        ),
-        received(invitationIcs(...review('SEQUENCE:3', weekly))),
-      ),
-    ],
-    [
-      'an invitation older than a repeated cancellation',
-      received(invitationIcs(...review('SEQUENCE:2'))),
-      replayed(
-        storedCopy('ACCEPTED'),
-        cancellation(...review('SEQUENCE:1')),
-        cancellation(...review('SEQUENCE:3')),
-      ),
-    ],
-  ])('leaves the copy as it is for %s', (_name, invitation, stored) => {
-    expect(changeOf(invitation, stored)).toEqual(
-      Result.succeed({ _tag: 'Current' }),
-    );
-  });
+  it.each(unchangedCopies)(
+    'leaves the copy as it is for %s',
+    (_name, invitation, stored) => {
+      expect(changeOf(invitation, stored)).toEqual(
+        Result.succeed({ _tag: 'Current' }),
+      );
+    },
+  );
 
   it('adds nothing for a cancellation of a meeting the calendar does not hold', () => {
     expect(changeOf(cancellation(...review('SEQUENCE:0')))).toEqual(

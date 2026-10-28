@@ -108,17 +108,16 @@ export const keepCancellations = (
 ): void => {
   for (const exdate of before.getAllProperties('exdate')) {
     const cancellation = cancellationOf(exdate);
-    if (cancellation === undefined || cancellation < sequenceOf(series)) {
-      continue;
-    }
-    const tzid = exdate.getParameter('tzid');
-    for (const value of exdate.getValues()) {
-      const key = timeKey(value, tzid);
-      if ((excludedSince(series, key) ?? -1) < cancellation) {
-        removeExclusion(series, key);
-        const kept = new ICAL.Property(structuredClone(exdate.toJSON()));
-        kept.setValues([value]);
-        series.addProperty(kept);
+    if (cancellation !== undefined && cancellation >= sequenceOf(series)) {
+      const tzid = exdate.getParameter('tzid');
+      for (const value of exdate.getValues()) {
+        const key = timeKey(value, tzid);
+        if ((excludedSince(series, key) ?? -1) < cancellation) {
+          removeExclusion(series, key);
+          const kept = new ICAL.Property(structuredClone(exdate.toJSON()));
+          kept.setValues([value]);
+          series.addProperty(kept);
+        }
       }
     }
   }
