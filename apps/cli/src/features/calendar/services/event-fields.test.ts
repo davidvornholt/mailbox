@@ -187,4 +187,33 @@ describe('eventDetail', () => {
     });
     expect(detail.recurrence?.changed[0]?.summary).toBeUndefined();
   });
+
+  it('lists the changed occurrences of a series without a rule', () => {
+    const detail = eventDetail(
+      parsed(
+        ...vevent(
+          'UID:dates@example.com',
+          'DTSTAMP:20261001T000000Z',
+          'SUMMARY:Workshop',
+          'DTSTART:20261020T090000Z',
+          'DTEND:20261020T100000Z',
+          'RDATE:20261027T090000Z',
+        ),
+        ...vevent(
+          'UID:dates@example.com',
+          'DTSTAMP:20261001T000000Z',
+          'RECURRENCE-ID:20261027T090000Z',
+          'DTSTART:20261027T090000Z',
+          'DTEND:20261027T100000Z',
+          'ATTENDEE:mailto:hidden@example.com',
+        ),
+      ),
+      { ...context, etag: undefined },
+      berlin,
+    );
+    expect(detail.recurrence).toEqual({
+      excluded: [],
+      changed: [expect.objectContaining({ attendees: ['hidden@example.com'] })],
+    });
+  });
 });

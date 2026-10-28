@@ -238,11 +238,14 @@ const recurrenceOf = (
   local: DateTime.TimeZone,
 ): EventDetail['recurrence'] => {
   const rule = master.getFirstPropertyValue('rrule');
-  if (!(rule instanceof ICAL.Recur)) {
+  if (!(rule instanceof ICAL.Recur) && overrides.length === 0) {
     return undefined;
   }
   return {
-    rule: rule.toString(),
+    ...optional(
+      'rule',
+      rule instanceof ICAL.Recur ? rule.toString() : undefined,
+    ),
     excluded: master.getAllProperties('exdate').flatMap((property) =>
       property
         .getValues()

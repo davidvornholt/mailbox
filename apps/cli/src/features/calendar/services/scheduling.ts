@@ -65,9 +65,6 @@ export type EventWrite = {
   readonly notifyAttendees: boolean;
 };
 
-// Why pim does not change the meeting although the user asked to notify its
-// attendees: someone else organizes it, or the server would not email some
-// attendees.
 const meetingRefusal = (
   account: Account,
   { href, object }: Pick<EventWrite, 'href' | 'object'>,

@@ -66,9 +66,9 @@ export type EventDetail = {
   readonly organizer?: { readonly email: string; readonly name?: string };
   readonly attendees: ReadonlyArray<Attendee>;
   // The RRULE, such as FREQ=WEEKLY;BYDAY=MO, with the dates it skips and the
-  // occurrences that differ from it.
+  // occurrences that differ from it. A series of RDATEs has no rule.
   readonly recurrence?: {
-    readonly rule: string;
+    readonly rule?: string;
     readonly excluded: ReadonlyArray<string>;
     readonly changed: ReadonlyArray<EventChange>;
   };
