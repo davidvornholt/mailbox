@@ -230,7 +230,7 @@ const remove = defineCommand(
     name: 'calendar delete',
     summary: 'Delete an event',
     description:
-      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. Deleting a meeting makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees, only when the user organizes it, and only on a server that sends cancellations itself. Prints the deleted event.',
+      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. Deleting a meeting the user organizes makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees and only on a server that sends cancellations itself. pim deletes the user\'s copy of a meeting someone else organizes without telling anyone, and refuses to with --notify-attendees, which would tell the organizer the user declined; "pim calendar respond" declines. Prints the deleted event.',
     flags: targetFlags,
   },
   (values): CommandEffect =>

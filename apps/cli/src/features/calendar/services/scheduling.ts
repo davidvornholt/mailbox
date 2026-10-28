@@ -131,3 +131,37 @@ export const writeOrganizer = (
     }
     return organizer;
   });
+
+// The user's addresses in lowercase: the account's own and those the
+// calendar server knows as theirs.
+export const userAddresses = (
+  account: Account,
+  known: ReadonlyArray<string>,
+): ReadonlyArray<string> => [
+  ...new Set([account.email, ...known].map((address) => address.toLowerCase())),
+];
+
+// The organizer of a meeting the user was invited to: someone else who
+// organizes every event of the object. None for the user's own events and
+// meetings.
+export const invitingOrganizer = (
+  client: DavClient,
+  account: Account,
+  { master, overrides }: CalendarObject,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  Effect.gen(function* () {
+    const [organizer, another] = new Set(
+      [master, ...overrides].map((event) => organizerAddress(event)),
+    );
+    if (
+      organizer === undefined ||
+      another !== undefined ||
+      organizer === account.email.toLowerCase()
+    ) {
+      return;
+    }
+    const principal = yield* discoverPrincipal(client);
+    return userAddresses(account, principal.addresses).includes(organizer)
+      ? undefined
+      : organizer;
+  });

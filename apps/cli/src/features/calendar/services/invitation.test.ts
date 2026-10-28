@@ -136,7 +136,9 @@ describe('unansweredCopy', () => {
         'ORGANIZER;CN=Boss',
         'ORGANIZER;CN=Boss;SCHEDULE-FORCE-SEND=REPLY',
       );
-    const copy = unfolded(unansweredCopy(received(answered), 'me@example.com'));
+    const copy = unfolded(
+      unansweredCopy(received(answered), ['me@example.com']),
+    );
     expect(copy).not.toContain('METHOD');
     expect(copy).not.toContain('SCHEDULE-FORCE-SEND');
     expect(copy).toContain('PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me');

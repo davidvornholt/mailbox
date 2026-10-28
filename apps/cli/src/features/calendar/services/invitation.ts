@@ -53,12 +53,29 @@ export const readInvitation = (
     }),
   );
 
-const eventsOf = ({
+export const eventsOf = ({
   master,
   overrides,
 }: CalendarObject): ReadonlyArray<ICAL.Component> => [master, ...overrides];
 
-const attendeeProperty = (
+// The occurrence an event describes: 'master' for the series, else its
+// RECURRENCE-ID, as sabre/dav names them.
+export const occurrenceKey = (event: ICAL.Component): string =>
+  event.hasProperty('recurrence-id')
+    ? String(event.getFirstPropertyValue('recurrence-id'))
+    : 'master';
+
+// The events an answer covers: all of them, or the occurrences named.
+export const answeredEvents = (
+  object: CalendarObject,
+  occurrences: ReadonlySet<string> | undefined,
+): ReadonlyArray<ICAL.Component> =>
+  eventsOf(object).filter(
+    (event) =>
+      occurrences === undefined || occurrences.has(occurrenceKey(event)),
+  );
+
+export const attendeeProperty = (
   event: ICAL.Component,
   attendee: string,
 ): ICAL.Property | undefined =>
@@ -103,15 +120,26 @@ export const answerOf = (
   return property === undefined ? undefined : partstatOf(property);
 };
 
-// Whether every event that lists the attendee already gives the answer.
-export const givesAnswer = (
-  object: CalendarObject,
+const leftToClient = (property: ICAL.Property | null | undefined): boolean => {
+  const agent = property?.getParameter('schedule-agent');
+  return typeof agent === 'string' && agent.toUpperCase() !== 'SERVER';
+};
+
+// Whether giving the answer in these events changes nothing the server
+// sends answers for: each event that lists the attendee gives it already,
+// and none leaves the attendee's answers to a calendar app (SCHEDULE-AGENT,
+// RFC 6638, section 7.1), which the server then starts to send.
+export const alreadyAnswers = (
+  events: ReadonlyArray<ICAL.Component>,
   attendee: string,
   partstat: Partstat,
 ): boolean =>
-  eventsOf(object).every((event) => {
+  events.every((event) => {
     const property = attendeeProperty(event, attendee);
-    return property === undefined || partstatOf(property) === partstat;
+    return (
+      property === undefined ||
+      (partstatOf(property) === partstat && !leftToClient(property))
+    );
   });
 
 // The status by which the server reports that it sent the user's answer to
@@ -125,55 +153,6 @@ export const sentAnswerStatus = (
   return typeof status === 'string' && status.startsWith('1.')
     ? status
     : undefined;
-};
-
-const excludedOccurrences = (object: CalendarObject): Set<string> =>
-  new Set(
-    eventsOf(object)
-      .flatMap((event) => event.getAllProperties('exdate'))
-      .flatMap((property) => property.getValues().map(String)),
-  );
-
-// The occurrences a scheduling server answers for the attendee: the series
-// and each changed occurrence that lists them, unless their SCHEDULE-AGENT
-// leaves that to a calendar app. sabre/dav names an occurrence by its raw
-// RECURRENCE-ID.
-const answeredOccurrences = (
-  object: CalendarObject,
-  attendee: string,
-): Set<string> =>
-  new Set(
-    eventsOf(object)
-      .filter((event) => {
-        const property = attendeeProperty(event, attendee);
-        return (
-          property !== undefined &&
-          String(property.getParameter('schedule-agent')).toUpperCase() !==
-            'CLIENT'
-        );
-      })
-      .map((event) =>
-        event.hasProperty('recurrence-id')
-          ? String(event.getFirstPropertyValue('recurrence-id'))
-          : 'master',
-      ),
-  );
-
-// Whether the next version of an event drops occurrences the stored one
-// answers for the attendee: one it newly excludes, or one that no longer
-// asks them. A server that schedules answers for those too when the
-// attendee writes the change, declining or with an empty answer.
-export const dropsOccurrences = (
-  stored: CalendarObject,
-  next: CalendarObject,
-  attendee: string,
-): boolean => {
-  const excluded = excludedOccurrences(stored);
-  const answered = answeredOccurrences(next, attendee);
-  return (
-    [...excludedOccurrences(next)].some((time) => !excluded.has(time)) ||
-    [...answeredOccurrences(stored, attendee)].some((id) => !answered.has(id))
-  );
 };
 
 // Who answers whom: the user's attendee address and the organizer's.
@@ -230,52 +209,69 @@ export const partiesOf = (
   return Result.succeed({ attendee, organizer });
 };
 
-// A copy of the data, so changes leave the invitation as it arrived.
-const copyOf = (vcalendar: ICAL.Component): ICAL.Component =>
-  new ICAL.Component(ICAL.parse(vcalendar.toString()));
+// A copy of the data, so changes leave the original as it was.
+export const copyOf = (component: ICAL.Component): ICAL.Component =>
+  new ICAL.Component(ICAL.parse(component.toString()));
 
 // A SCHEDULE-FORCE-SEND left stored would make the server send the answer
 // again on every later change.
-const removeForcedSend = (event: ICAL.Component): void => {
+export const removeForcedSend = (event: ICAL.Component): void => {
   event.getFirstProperty('organizer')?.removeParameter('schedule-force-send');
 };
 
 // The invitation as a calendar stores it: without the iTIP method (RFC 4791,
-// section 4.1), and with the user's answer still open, so that storing it
-// sends the organizer nothing.
+// section 4.1), and with the answers of the user's addresses still open, so
+// that storing it sends the organizer nothing.
 export const unansweredCopy = (
   invitation: ReceivedInvitation,
-  attendee: string,
+  addresses: ReadonlyArray<string>,
 ): string => {
   const vcalendar = copyOf(invitation.object.vcalendar);
   vcalendar.removeAllProperties('method');
   for (const event of vcalendar.getAllSubcomponents('vevent')) {
-    attendeeProperty(event, attendee)?.setParameter('partstat', 'NEEDS-ACTION');
+    for (const address of addresses) {
+      attendeeProperty(event, address)?.setParameter(
+        'partstat',
+        'NEEDS-ACTION',
+      );
+    }
     removeForcedSend(event);
   }
   return vcalendar.toString();
 };
 
-// Gives the answer in every event that lists the attendee. With force, the
-// server sends it even where the answer does not change (RFC 6638, section
-// 7.3). A server that schedules always lets the organizer decide, so pim
-// removes a SCHEDULE-AGENT that leaves the reply to a calendar app.
+export type Answer = {
+  readonly partstat: Partstat;
+  // Makes the server send the answer even where it does not change (RFC
+  // 6638, section 7.3).
+  readonly force: boolean;
+  // The occurrences to answer, by occurrenceKey; all when absent.
+  readonly occurrences?: ReadonlySet<string>;
+};
+
+// Gives the answer in the events it covers. A server that schedules always
+// lets the organizer decide, so pim removes a SCHEDULE-AGENT that leaves the
+// reply to a calendar app: from the organizer of every event, as RFC 6638
+// requires the same value on all of them, and from the attendee in the
+// events answered.
 export const giveAnswer = (
   object: CalendarObject,
   attendee: string,
-  { partstat, force }: { readonly partstat: Partstat; readonly force: boolean },
+  { partstat, force, occurrences }: Answer,
 ): void => {
   for (const event of eventsOf(object)) {
-    attendeeProperty(event, attendee)?.setParameter(
-      'partstat',
-      partstat.toUpperCase(),
-    );
     const organizer = event.getFirstProperty('organizer');
-    const agent = organizer?.getParameter('schedule-agent');
-    if (typeof agent === 'string' && agent.toUpperCase() !== 'SERVER') {
+    if (leftToClient(organizer)) {
       organizer?.removeParameter('schedule-agent');
     }
     removeForcedSend(event);
+  }
+  for (const event of answeredEvents(object, occurrences)) {
+    const property = attendeeProperty(event, attendee);
+    property?.setParameter('partstat', partstat.toUpperCase());
+    if (leftToClient(property)) {
+      property?.removeParameter('schedule-agent');
+    }
   }
   if (force) {
     object.master

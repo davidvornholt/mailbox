@@ -15,45 +15,20 @@ import {
   accept,
   copies,
   copyHref,
+  occurrenceEvent,
   routesWith,
   storedCopy,
+  storedSeries,
+  weekly,
+  withOccurrence,
 } from './invitation-reply.fixture';
 
-// An invitation for one occurrence of a recurring meeting.
-const occurrence = invitationIcs(
-  ...vevent(
-    'ORGANIZER;CN=Boss:mailto:boss@example.com',
-    'ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me:mailto:me@example.com',
-    'UID:review@example.com',
-    'RECURRENCE-ID;TZID=W. Europe Standard Time:20261111T100000',
-    'SUMMARY:Review',
-    'DTSTART;TZID=W. Europe Standard Time:20261111T120000',
-    'DTEND;TZID=W. Europe Standard Time:20261111T130000',
-    'DTSTAMP:20261028T080000Z',
-    'SEQUENCE:1',
-  ),
-);
-
-const weekly = 'RRULE:FREQ=WEEKLY;COUNT=3';
-
-// The stored meeting with more lines in its main event.
-const storedSeries = (partstat: string, ...lines: ReadonlyArray<string>) =>
-  storedCopy(partstat).replace(
-    'SEQUENCE:0',
-    ['SEQUENCE:0', ...lines].join('\r\n'),
-  );
-
-// An occurrence of the meeting that differs from the series.
-const changed = (attendee: string) =>
-  vevent(
-    'UID:review@example.com',
-    'RECURRENCE-ID:20261111T090000Z',
-    'DTSTART:20261111T100000Z',
-    'ORGANIZER:mailto:boss@example.com',
-    attendee,
-  );
-
-const acceptedOccurrence = changed(
+// An occurrence of the meeting that differs from the series, accepted.
+const acceptedOccurrence = vevent(
+  'UID:review@example.com',
+  'RECURRENCE-ID:20261111T090000Z',
+  'DTSTART:20261111T100000Z',
+  'ORGANIZER:mailto:boss@example.com',
   'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
 );
 
@@ -72,14 +47,6 @@ const refusals: ReadonlyArray<readonly [string, Refusal]> = [
       report: copies(),
       answer: { ...accept, notifyOrganizer: false },
       tag: 'EventHasAttendeesError',
-    },
-  ],
-  [
-    'an answer for one occurrence',
-    {
-      report: copies([copyHref, storedCopy('NEEDS-ACTION')]),
-      invitation: received(occurrence),
-      tag: 'InvitationError',
     },
   ],
   [
@@ -126,40 +93,45 @@ const refusals: ReadonlyArray<readonly [string, Refusal]> = [
     },
   ],
   [
-    'to store an update that excludes an occurrence',
-    {
-      report: copies([copyHref, storedSeries('ACCEPTED', weekly)]),
-      invitation: received(
-        invitationIcs(
-          ...review(
-            'SEQUENCE:1',
-            weekly,
-            'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
-          ),
-        ),
-      ),
-      tag: 'InvitationError',
-    },
-  ],
-  ...[
-    'ATTENDEE:mailto:ana@example.com',
-    'ATTENDEE;SCHEDULE-AGENT=CLIENT:mailto:me@example.com',
-  ].map((attendee): readonly [string, Refusal] => [
-    `to store an update whose changed occurrence lists ${attendee}`,
+    'to answer an occurrence the copy already answers',
     {
       report: copies([
         copyHref,
-        storedCopy(
-          'NEEDS-ACTION',
-          ...changed('ATTENDEE:mailto:me@example.com'),
+        withOccurrence(
+          storedSeries('NEEDS-ACTION', weekly),
+          occurrenceEvent('ACCEPTED'),
         ),
       ]),
-      invitation: received(
-        invitationIcs(...review('SEQUENCE:1'), ...changed(attendee)),
-      ),
+      invitation: received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
       tag: 'InvitationError',
     },
-  ]),
+  ],
+  [
+    'to answer an occurrence the organizer has changed the meeting since',
+    {
+      report: copies([
+        copyHref,
+        storedSeries('NEEDS-ACTION', weekly).replace(
+          'SEQUENCE:0',
+          'SEQUENCE:2',
+        ),
+      ]),
+      invitation: received(invitationIcs(...occurrenceEvent('NEEDS-ACTION'))),
+      tag: 'InvitationError',
+    },
+  ],
+  [
+    'to answer a meeting the calendar holds as cancelled',
+    {
+      report: copies([
+        copyHref,
+        storedCopy('NEEDS-ACTION')
+          .replace('SEQUENCE:0', 'SEQUENCE:1')
+          .replace('STATUS:CONFIRMED', 'STATUS:CANCELLED'),
+      ]),
+      tag: 'InvitationError',
+    },
+  ],
   [
     "to answer a copy that lists two of the user's addresses",
     {
@@ -180,14 +152,6 @@ const refusals: ReadonlyArray<readonly [string, Refusal]> = [
           ),
         },
       },
-      tag: 'InvitationError',
-    },
-  ],
-  [
-    'to store an update without a changed occurrence',
-    {
-      report: copies([copyHref, storedCopy('ACCEPTED', ...acceptedOccurrence)]),
-      invitation: received(invitationIcs(...review('SEQUENCE:1'))),
       tag: 'InvitationError',
     },
   ],

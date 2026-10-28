@@ -1,48 +1,48 @@
 import { Clock, type DateTime, Effect, Result } from 'effect';
+import type ICAL from 'ical.js';
 import type { Account } from '../../../shared/accounts/account';
 import type { DavClient } from '../../../shared/dav/client';
-import { describeCollections } from '../../../shared/dav/collections';
 import { Dav } from '../../../shared/dav/dav';
 import { discoverPrincipal } from '../../../shared/dav/discovery';
 import {
-  CalendarNotFoundError,
   EventChangeError,
   EventHasAttendeesError,
   InvitationError,
 } from '../errors/errors';
-import type { Calendar, EventDetail } from '../schemas/calendar';
-import {
-  createCalendarObject,
-  fetchCalendarObject,
-  listCalendars,
-  replaceCalendarObject,
-  schedulesFor,
-} from './caldav';
+import type { EventDetail } from '../schemas/calendar';
+import { replaceCalendarObject, schedulesFor } from './caldav';
 import {
   type CalendarWriteError,
   detailOf,
   storedDetail,
-  writableCalendar,
 } from './calendar-write';
-import { organizerAddress } from './event-attendees';
-import { type CalendarObject, parseCalendar } from './event-fields';
+import type { CalendarObject } from './event-fields';
 import {
-  answerOf,
-  dropsOccurrences,
+  alreadyAnswers,
+  answeredEvents,
+  attendeeProperty,
+  eventsOf,
   giveAnswer,
-  givesAnswer,
   type InvitationReply,
   invitationReply,
+  occurrenceKey,
   ownAttendees,
   type Parties,
   type Partstat,
   partiesOf,
   type ReceivedInvitation,
   sentAnswerStatus,
-  sequenceOf,
-  unansweredCopy,
 } from './invitation';
-import { type EventCopy, findCopies, writable } from './invitation-copies';
+import type { EventCopy } from './invitation-copies';
+import {
+  applyImport,
+  type MeetingPlace,
+  meetingPlace,
+  newMeetingCalendar,
+  plannedChange,
+  plannedCopy,
+} from './invitation-import';
+import { userAddresses } from './scheduling';
 
 export type InvitationAnswer = {
   readonly partstat: Partstat;
@@ -88,204 +88,172 @@ const replyOutcome = (
     })),
   );
 
-// The calendar that holds the event, or gets it: the one wanted, else the
-// only one the user may write to. None when the user may write to none.
-const eventCalendar = (
-  client: DavClient,
-  account: Account,
-  uid: string,
-  wanted: string | undefined,
-): Effect.Effect<
-  { readonly calendar: Calendar; readonly copy?: EventCopy } | undefined,
-  CalendarWriteError | InvitationError
-> =>
-  Effect.gen(function* () {
-    const calendars = yield* listCalendars(client);
-    const chosen =
-      wanted === undefined
-        ? undefined
-        : yield* writableCalendar(account.email, calendars, wanted);
-    const candidates = chosen === undefined ? writable(calendars) : [chosen];
-    const copies = yield* findCopies(client, candidates, uid);
-    const [copy, another] = copies;
-    if (another !== undefined) {
-      return yield* new InvitationError({
-        message: `The meeting is in several calendars of ${account.email}: ${copies.map(({ resource }) => resource.href).join(', ')}. Pass --calendar to choose one`,
-      });
-    }
-    if (copy !== undefined) {
-      return { calendar: copy.calendar, copy };
-    }
-    const [only, second] = candidates;
-    if (second !== undefined) {
-      return yield* new CalendarNotFoundError({
-        calendar: '',
-        message: `${account.email} has several calendars; pass --calendar with the one to add the meeting to: ${describeCollections(candidates)}`,
-      });
-    }
-    return only === undefined ? undefined : { calendar: only };
-  });
-
-// Adds the invitation to the calendar with the user's answer still open, so
-// the server sends nothing yet, and reads the event back as stored.
-const storeCopy = (
-  client: DavClient,
-  account: Account,
-  {
-    calendar,
-    invitation,
-    attendee,
-  }: {
-    readonly calendar: Calendar;
-    readonly invitation: ReceivedInvitation;
-    readonly attendee: string;
-  },
-  local: DateTime.TimeZone,
-): Effect.Effect<EventCopy, CalendarWriteError> =>
-  Effect.gen(function* () {
-    const folder = calendar.href.endsWith('/')
-      ? calendar.href
-      : `${calendar.href}/`;
-    const href = `${folder}${crypto.randomUUID()}.ics`;
-    const ics = unansweredCopy(invitation, attendee);
-    yield* detailOf(
-      { account: account.email, href, etag: undefined, ics },
-      local,
-    );
-    yield* createCalendarObject(client, href, ics);
-    const resource = yield* fetchCalendarObject(client, href);
-    return {
-      calendar,
-      resource,
-      object: yield* parseCalendar(href, resource.ics),
-    };
-  });
-
-type ServerAnswer = {
-  readonly invitation: ReceivedInvitation;
-  readonly parties: Parties;
-  // The user's addresses the server knows.
+// The answer pim gives in the user's copy of the meeting.
+type CopyAnswer = {
+  readonly attendee: string;
+  // The user's addresses, in lowercase.
   readonly addresses: ReadonlyArray<string>;
-  readonly calendar: Calendar;
-  readonly copy: EventCopy | undefined;
   readonly partstat: Partstat;
+  // The occurrences an invitation to single occurrences is for, by
+  // occurrenceKey; none for the series.
+  readonly occurrences: ReadonlySet<string> | undefined;
 };
 
-// Whether the server must be made to send the answer, which it otherwise
-// sends only when the answer changes, or why pim cannot answer in the copy.
-// The content replaces the stored event when the invitation is newer.
-const forceFor = (
-  {
-    invitation,
-    attendee,
-    addresses,
-    partstat,
-  }: {
-    readonly invitation: ReceivedInvitation;
-    readonly attendee: string;
-    readonly addresses: ReadonlyArray<string>;
-    readonly partstat: Partstat;
-  },
+const isCancelled = (event: ICAL.Component): boolean =>
+  String(event.getFirstPropertyValue('status')).toUpperCase() === 'CANCELLED';
+
+// Why pim cannot answer in the copy, if it cannot: sabre/dav sends no
+// answer for a cancelled meeting, and answers for whichever of the user's
+// addresses it finds first.
+const answerRefusal = (
+  { attendee, addresses, occurrences }: CopyAnswer,
   href: string,
-  {
-    stored,
-    content,
-  }: { readonly stored: CalendarObject; readonly content: CalendarObject },
-): Effect.Effect<boolean, InvitationError> => {
-  const refuse = (message: string) =>
-    Effect.fail(new InvitationError({ message }));
-  if (answerOf(content, attendee) === undefined) {
-    return refuse(
-      `${href} does not list ${attendee} as an attendee, so pim cannot answer the meeting there`,
-    );
+  object: CalendarObject,
+): string | undefined => {
+  const events = answeredEvents(object, occurrences);
+  if (events.length === 0) {
+    return `${href} does not hold the occurrence the invitation is for, as the organizer has changed the meeting since. Answer the latest invitation for it`;
   }
-  // The server answers for whichever of the user's addresses it finds first.
-  const own = ownAttendees(content, addresses);
-  if (own.length > 1) {
-    return refuse(
-      `${href} lists ${own.join(' and ')} as attendees, so pim cannot answer for one of them alone. Answer it in a calendar app`,
-    );
+  if (!events.some((event) => attendeeProperty(event, attendee))) {
+    return `${href} does not list ${attendee} as an attendee, so pim cannot answer the meeting there`;
   }
-  const replaces = content !== stored;
-  if (replaces && dropsOccurrences(stored, content, attendee)) {
-    return refuse(
-      `${invitation.source} drops occurrences of the meeting that ${href} holds, and the server would send answers for those as well. Answer it in a calendar app`,
-    );
+  if (isCancelled(object.master) || events.every(isCancelled)) {
+    return `${href} holds the meeting as cancelled, so there is nothing to answer`;
   }
-  const force = givesAnswer(stored, attendee, partstat);
-  if (!force) {
-    return Effect.succeed(false);
+  const own = ownAttendees(object, addresses);
+  return own.length > 1
+    ? `${href} lists ${own.join(' and ')} as attendees, so pim cannot answer for one of them alone. Answer it in a calendar app`
+    : undefined;
+};
+
+// Why the server cannot be made to send an answer the copy already gives,
+// which it otherwise sends only when the answer changes. sabre/dav would
+// send all occurrences, drops SCHEDULE-FORCE-SEND after use only from the
+// first event, and a flag left stored would resend the answer on every
+// later change, so pim forces only a lone event.
+const resendRefusal = (
+  { partstat, occurrences }: CopyAnswer,
+  href: string,
+  object: CalendarObject,
+): string | undefined => {
+  if (occurrences !== undefined) {
+    return `${href} already answers ${partstat} for this occurrence. pim cannot make the server send that answer again for one occurrence`;
   }
-  // sabre/dav drops SCHEDULE-FORCE-SEND after use only from the first event,
-  // and a flag left stored would resend the answer on every later change, so
-  // pim forces only a lone event.
-  if (content.vcalendar.getAllSubcomponents('vevent').length > 1) {
-    return refuse(
-      `${href} already answers ${partstat}. pim cannot make the server send that answer again for a meeting with changed occurrences`,
-    );
+  if (eventsOf(object).length > 1) {
+    return `${href} already answers ${partstat}. pim cannot make the server send that answer again for a meeting with changed occurrences`;
   }
   // An answer the server already sent, as when a write it committed failed
   // on the way back, goes out only once.
-  const sent = sentAnswerStatus(stored);
-  if (!replaces && sent !== undefined) {
-    return refuse(
-      `${href} already answers ${partstat}, and the server reports that it sent this answer to the organizer (SCHEDULE-STATUS ${sent}), so pim does not send it again`,
-    );
-  }
-  return Effect.succeed(true);
+  const sent = sentAnswerStatus(object);
+  return sent === undefined
+    ? undefined
+    : `${href} already answers ${partstat}, and the server reports that it sent this answer to the organizer (SCHEDULE-STATUS ${sent}), so pim does not send it again`;
 };
 
-// Gives the answer in the user's copy of the event, which makes the server
-// send it to the organizer (RFC 6638, section 3.2.2.2). An invitation newer
-// than the copy replaces it.
-const answerOnServer = (
+// Whether the server must be made to send the answer, or why pim cannot
+// answer the meeting as the copy holds it.
+const forceFor = (
+  answer: CopyAnswer,
+  href: string,
+  object: CalendarObject,
+): Effect.Effect<boolean, InvitationError> => {
+  const refusal =
+    answerRefusal(answer, href, object) ??
+    (alreadyAnswers(
+      answeredEvents(object, answer.occurrences),
+      answer.attendee,
+      answer.partstat,
+    )
+      ? (resendRefusal(answer, href, object) ?? true)
+      : false);
+  return typeof refusal === 'string'
+    ? Effect.fail(new InvitationError({ message: refusal }))
+    : Effect.succeed(refusal);
+};
+
+const answerPut = (
   client: DavClient,
-  account: Account,
-  { invitation, parties, addresses, calendar, copy, partstat }: ServerAnswer,
-  local: DateTime.TimeZone,
-): Effect.Effect<EventDetail, CalendarWriteError | InvitationError> =>
+  { resource }: EventCopy,
+  ics: string,
+): Effect.Effect<string | undefined, CalendarWriteError | InvitationError> =>
   Effect.gen(function* () {
-    const { attendee } = parties;
-    const stored =
-      copy ??
-      (yield* storeCopy(
-        client,
-        account,
-        { calendar, invitation, attendee },
-        local,
-      ));
-    const { href, etag } = stored.resource;
-    const organizer = organizerAddress(stored.object.master);
-    if (organizer !== parties.organizer) {
-      return yield* new InvitationError({
-        message: `${href} holds a meeting with the same UID that ${organizer ?? 'nobody'} organizes, not ${parties.organizer}, so pim leaves it unchanged`,
-      });
-    }
+    const { href, etag } = resource;
     if (etag === undefined) {
       return yield* new EventChangeError({
         href,
         message: `The server gave no etag for ${href}, so pim cannot make sure it answers the version it read. The meeting is in the calendar, unanswered`,
       });
     }
-    const content =
-      invitation.sequence > sequenceOf(stored.object.master)
-        ? yield* parseCalendar(href, unansweredCopy(invitation, attendee))
-        : stored.object;
-    const force = yield* forceFor(
-      { invitation, attendee, addresses, partstat },
-      href,
-      { stored: stored.object, content },
+    return yield* replaceCalendarObject(client, href, ics, etag).pipe(
+      Effect.catchTag('DavError', (error) =>
+        Effect.fail(
+          error.uncertain === true
+            ? new InvitationError({
+                message: `${error.message}. The server may have stored the answer and emailed it to the organizer. Run "pim calendar invitation" to see the answer the calendar holds before answering again`,
+              })
+            : error,
+        ),
+      ),
     );
-    giveAnswer(content, attendee, { partstat, force });
-    const ics = content.vcalendar.toString();
-    const detail = (newEtag: string | undefined) =>
-      detailOf({ account: account.email, href, etag: newEtag, ics }, local);
+  });
+
+// Brings the user's copy of the meeting up to date with the invitation,
+// silently, and gives the answer there, which makes the server send it to
+// the organizer (RFC 6638, section 3.2.2.2). pim checks the answer against
+// the copy it plans before it writes anything.
+const answerOnServer = (
+  client: DavClient,
+  account: Account,
+  {
+    invitation,
+    place,
+    answer,
+  }: {
+    readonly invitation: ReceivedInvitation;
+    readonly place: MeetingPlace;
+    readonly answer: CopyAnswer;
+  },
+  local: DateTime.TimeZone,
+): Effect.Effect<EventDetail, CalendarWriteError | InvitationError> =>
+  Effect.gen(function* () {
+    const change = yield* plannedChange(invitation, answer.addresses, place);
+    const planned = yield* plannedCopy(place, change);
+    if (planned !== undefined) {
+      yield* forceFor(answer, place.copy?.resource.href ?? 'The copy', planned);
+    }
+    const { copy } = yield* applyImport(
+      client,
+      account,
+      { place, change },
+      local,
+    );
+    if (copy === undefined) {
+      return yield* new InvitationError({
+        message: `${invitation.source} left no meeting in the calendar to answer`,
+      });
+    }
+    const { href } = copy.resource;
+    const force = yield* forceFor(answer, href, copy.object);
+    giveAnswer(copy.object, answer.attendee, {
+      partstat: answer.partstat,
+      force,
+      ...(answer.occurrences === undefined
+        ? {}
+        : { occurrences: answer.occurrences }),
+    });
+    const ics = copy.object.vcalendar.toString();
+    const detail = (etag: string | undefined) =>
+      detailOf({ account: account.email, href, etag, ics }, local);
     yield* detail(undefined);
-    const written = yield* detail(
-      yield* replaceCalendarObject(client, href, ics, etag),
-    );
+    const written = yield* detail(yield* answerPut(client, copy, ics));
     return yield* storedDetail(client, written, local);
   });
+
+// The calendar that holds the meeting, or gets it.
+const placeCalendar = (account: Account, place: MeetingPlace) =>
+  place.copy === undefined
+    ? newMeetingCalendar(account, place.calendars)
+    : Effect.succeed(place.copy.calendar);
 
 // Answers the invitation through the calendar server when it can send the
 // answer itself (RFC 6638), and otherwise returns the reply email for the
@@ -305,41 +273,43 @@ export const answerInvitation = (
     const dav = yield* Dav;
     const client = yield* dav.client(account);
     const principal = yield* discoverPrincipal(client);
-    const addresses = principal.addresses.map((address) =>
-      address.toLowerCase(),
-    );
-    const parties = yield* partiesFor(invitation, [
-      account.email,
-      ...addresses,
-    ]);
+    const known = principal.addresses.map((address) => address.toLowerCase());
+    const addresses = userAddresses(account, known);
+    const parties = yield* partiesFor(invitation, addresses);
     const place =
-      addresses.includes(parties.attendee) && principal.calendarHomes.length > 0
-        ? yield* eventCalendar(client, account, invitation.uid, answer.calendar)
+      known.includes(parties.attendee) && principal.calendarHomes.length > 0
+        ? yield* meetingPlace(client, account, invitation.uid, answer.calendar)
         : undefined;
+    const calendar =
+      place === undefined ? undefined : yield* placeCalendar(account, place);
     if (
       place === undefined ||
-      !(yield* schedulesFor(client, place.calendar.href))
+      calendar === undefined ||
+      !(yield* schedulesFor(client, calendar.href))
     ) {
       return yield* replyOutcome(account, invitation, parties, partstat);
     }
-    const { calendar, copy } = place;
-    // The calendar keeps the series and its changed occurrences in one
-    // object, which an answer for one occurrence alone would overwrite.
-    if (invitation.object.master.hasProperty('recurrence-id')) {
-      return yield* new InvitationError({
-        message: `${invitation.source} is for one occurrence of a recurring meeting, which pim cannot answer in the calendar yet. Answer it in a calendar app`,
-      });
-    }
     if (!answer.notifyOrganizer) {
       return yield* new EventHasAttendeesError({
-        href: copy?.resource.href ?? calendar.href,
+        href: place.copy?.resource.href ?? calendar.href,
         message: `Answering makes ${new URL(client.login.url).host} email the organizer ${parties.organizer}. Pass --notify-organizer only if the user asked to answer the invitation`,
       });
     }
     const event = yield* answerOnServer(
       client,
       account,
-      { invitation, parties, addresses, calendar, copy, partstat },
+      {
+        invitation,
+        place,
+        answer: {
+          attendee: parties.attendee,
+          addresses,
+          partstat,
+          occurrences: invitation.object.master.hasProperty('recurrence-id')
+            ? new Set(eventsOf(invitation.object).map(occurrenceKey))
+            : undefined,
+        },
+      },
       local,
     );
     return { _tag: 'Answered', event };

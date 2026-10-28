@@ -10,6 +10,7 @@ import {
   calendarRoutes,
   eventRoutes,
   href,
+  invitation,
   meeting,
   noScheduling,
   type Routes,
@@ -237,5 +238,27 @@ describe('deleteEvent of a meeting', () => {
     const [deletion] = writeRequests(requests);
     expect(deletion?.method).toBe('DELETE');
     expect(deletion?.headers.get('schedule-reply')).toBeNull();
+  });
+
+  it("deletes the user's copy of someone else's meeting without telling the organizer", async () => {
+    const { value, requests } = await succeedsOnFakeDav(
+      eventRoutes(icsOf(...invitation)),
+      deleteEvent(davAccount, target(), berlin),
+    );
+    expect(value).toMatchObject({ organizer: { email: 'boss@example.com' } });
+    const [deletion] = writeRequests(requests);
+    expect(deletion?.method).toBe('DELETE');
+    expect(deletion?.headers.get('if-match')).toBe('"v1"');
+    expect(deletion?.headers.get('schedule-reply')).toBe('F');
+  });
+
+  it("refuses to decline someone else's meeting by deleting it", async () => {
+    const { error, requests } = await failsOnFakeDav(
+      eventRoutes(icsOf(...invitation)),
+      deleteEvent(davAccount, target({ notifyAttendees: true }), berlin),
+    );
+    expect(error).toMatchObject({ _tag: 'EventHasAttendeesError' });
+    expect(error.message).toContain('pim calendar respond');
+    expect(writeRequests(requests)).toEqual([]);
   });
 });
