@@ -109,16 +109,36 @@ describe('partiesOf', () => {
     const parties = partiesOf(invitation, ['me@example.com']);
     expect(Result.isFailure(parties) && parties.failure).toContain(reason);
   });
+
+  it('refuses an invitation for two of the addresses', () => {
+    const parties = partiesOf(
+      received(
+        invitationIcs(
+          ...review('ATTENDEE;PARTSTAT=ACCEPTED:mailto:alias@example.com'),
+        ),
+      ),
+      ['alias@example.com', 'me@example.com'],
+    );
+    expect(Result.isFailure(parties) && parties.failure).toContain(
+      'both me@example.com and alias@example.com',
+    );
+  });
 });
 
 describe('unansweredCopy', () => {
   it('stores the invitation without its method and with the answer open', () => {
-    const answered = invitationIcs(...review()).replace(
-      'PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me',
-      'PARTSTAT=ACCEPTED;RSVP=TRUE;CN=Me',
-    );
+    const answered = invitationIcs(...review())
+      .replace(
+        'PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me',
+        'PARTSTAT=ACCEPTED;RSVP=TRUE;CN=Me',
+      )
+      .replace(
+        'ORGANIZER;CN=Boss',
+        'ORGANIZER;CN=Boss;SCHEDULE-FORCE-SEND=REPLY',
+      );
     const copy = unfolded(unansweredCopy(received(answered), 'me@example.com'));
     expect(copy).not.toContain('METHOD');
+    expect(copy).not.toContain('SCHEDULE-FORCE-SEND');
     expect(copy).toContain('PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me');
     expect(copy).toContain('TZID:W. Europe Standard Time');
     expect(copy).toContain('BEGIN:VALARM');
@@ -163,7 +183,9 @@ describe('giveAnswer', () => {
   });
 
   it('forces the answer only on the main event', () => {
-    const object = stored('ORGANIZER:mailto:boss@example.com');
+    const object = stored(
+      'ORGANIZER;SCHEDULE-FORCE-SEND=REPLY:mailto:boss@example.com',
+    );
     giveAnswer(object, 'me@example.com', { partstat: 'accepted', force: true });
     expect(object.master.toString()).toContain(
       'ORGANIZER;SCHEDULE-FORCE-SEND=REPLY:mailto:boss@example.com',

@@ -66,16 +66,26 @@ const attendeeProperty = (
     .getAllProperties('attendee')
     .find((property) => addressOf(property) === attendee);
 
+// The user's addresses that the object lists as attendees, in order.
+const ownAttendees = (
+  object: CalendarObject,
+  addresses: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  const own = new Set(addresses.map((address) => address.toLowerCase()));
+  return [
+    ...new Set(
+      eventsOf(object)
+        .flatMap((event) => event.getAllProperties('attendee').map(addressOf))
+        .filter((address) => own.has(address)),
+    ),
+  ];
+};
+
 // The first of the user's addresses that the object lists as an attendee.
 export const ownAttendee = (
   object: CalendarObject,
   addresses: ReadonlyArray<string>,
-): string | undefined => {
-  const own = new Set(addresses.map((address) => address.toLowerCase()));
-  return eventsOf(object)
-    .flatMap((event) => event.getAllProperties('attendee').map(addressOf))
-    .find((address) => own.has(address));
-};
+): string | undefined => ownAttendees(object, addresses)[0];
 
 const partstatOf = (property: ICAL.Property): string => {
   const value = property.getParameter('partstat');
@@ -104,6 +114,48 @@ export const givesAnswer = (
     return property === undefined || partstatOf(property) === partstat;
   });
 
+// The status by which the server reports that it sent the user's answer to
+// the organizer: 1.x, sent or pending (RFC 6638, section 3.2.9).
+export const sentAnswerStatus = (
+  object: CalendarObject,
+): string | undefined => {
+  const status = object.master
+    .getFirstProperty('organizer')
+    ?.getParameter('schedule-status');
+  return typeof status === 'string' && status.startsWith('1.')
+    ? status
+    : undefined;
+};
+
+const excludedOccurrences = (object: CalendarObject): Set<string> =>
+  new Set(
+    eventsOf(object)
+      .flatMap((event) => event.getAllProperties('exdate'))
+      .flatMap((property) => property.getValues().map(String)),
+  );
+
+const changedOccurrences = ({ overrides }: CalendarObject): Set<string> =>
+  new Set(
+    overrides.map((event) =>
+      String(event.getFirstPropertyValue('recurrence-id')),
+    ),
+  );
+
+// Whether the next version of an event drops occurrences the stored one
+// holds: one it newly excludes, or a changed one it no longer has. A server
+// that schedules answers for those too when the attendee writes the change.
+export const dropsOccurrences = (
+  stored: CalendarObject,
+  next: CalendarObject,
+): boolean => {
+  const excluded = excludedOccurrences(stored);
+  const changed = changedOccurrences(next);
+  return (
+    [...excludedOccurrences(next)].some((time) => !excluded.has(time)) ||
+    [...changedOccurrences(stored)].some((id) => !changed.has(id))
+  );
+};
+
 // Who answers whom: the user's attendee address and the organizer's.
 export type Parties = {
   readonly attendee: string;
@@ -124,7 +176,7 @@ export const partiesOf = (
   }
   const organizer = organizerAddress(object.master);
   const own = addresses.map((address) => address.toLowerCase());
-  const attendee = ownAttendee(object, own);
+  const [attendee, another] = ownAttendees(object, own);
   if (organizer === undefined) {
     return Result.fail('names no organizer to answer');
   }
@@ -143,6 +195,13 @@ export const partiesOf = (
       `does not invite ${own.join(' or ')} as an attendee, so pim cannot answer it`,
     );
   }
+  // A server that schedules answers for whichever of the user's addresses it
+  // finds first, which need not be the one pim answers for.
+  if (another !== undefined) {
+    return Result.fail(
+      `invites both ${attendee} and ${another}, so pim cannot answer for one of them alone. Answer it in a calendar app`,
+    );
+  }
   if (text(object.master, 'status')?.toUpperCase() === 'CANCELLED') {
     return Result.fail(
       'is for a cancelled meeting, so there is nothing to answer',
@@ -155,6 +214,12 @@ export const partiesOf = (
 const copyOf = (vcalendar: ICAL.Component): ICAL.Component =>
   new ICAL.Component(ICAL.parse(vcalendar.toString()));
 
+// A SCHEDULE-FORCE-SEND left stored would make the server send the answer
+// again on every later change.
+const removeForcedSend = (event: ICAL.Component): void => {
+  event.getFirstProperty('organizer')?.removeParameter('schedule-force-send');
+};
+
 // The invitation as a calendar stores it: without the iTIP method (RFC 4791,
 // section 4.1), and with the user's answer still open, so that storing it
 // sends the organizer nothing.
@@ -166,6 +231,7 @@ export const unansweredCopy = (
   vcalendar.removeAllProperties('method');
   for (const event of vcalendar.getAllSubcomponents('vevent')) {
     attendeeProperty(event, attendee)?.setParameter('partstat', 'NEEDS-ACTION');
+    removeForcedSend(event);
   }
   return vcalendar.toString();
 };
@@ -189,6 +255,7 @@ export const giveAnswer = (
     if (typeof agent === 'string' && agent.toUpperCase() !== 'SERVER') {
       organizer?.removeParameter('schedule-agent');
     }
+    removeForcedSend(event);
   }
   if (force) {
     object.master

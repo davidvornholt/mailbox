@@ -167,6 +167,17 @@ const occurrence = invitationIcs(
   ),
 );
 
+const weekly = 'RRULE:FREQ=WEEKLY;COUNT=3';
+
+// An occurrence of the stored meeting that differs from the series.
+const changed = vevent(
+  'UID:review@example.com',
+  'RECURRENCE-ID:20261111T090000Z',
+  'DTSTART:20261111T100000Z',
+  'ORGANIZER:mailto:boss@example.com',
+  'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
+);
+
 type Refusal = {
   readonly report: Routes[string];
   readonly answer?: InvitationAnswer;
@@ -218,19 +229,44 @@ describe('answerInvitation refusals', () => {
     [
       'to resend an answer for a meeting with changed occurrences',
       {
+        report: copies([copyHref, storedCopy('ACCEPTED', ...changed)]),
+        tag: 'InvitationError',
+      },
+    ],
+    [
+      'to send an answer again that the server reports sent',
+      {
         report: copies([
           copyHref,
-          storedCopy(
-            'ACCEPTED',
-            ...vevent(
-              'UID:review@example.com',
-              'RECURRENCE-ID:20261111T090000Z',
-              'DTSTART:20261111T100000Z',
-              'ORGANIZER:mailto:boss@example.com',
-              'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
-            ),
+          storedCopy('ACCEPTED').replace(
+            'ORGANIZER;CN=Boss',
+            'ORGANIZER;CN=Boss;SCHEDULE-STATUS=1.1',
           ),
         ]),
+        tag: 'InvitationError',
+      },
+    ],
+    [
+      'to store an update that excludes an occurrence',
+      {
+        report: copies([copyHref, storedCopy('ACCEPTED', weekly)]),
+        invitation: received(
+          invitationIcs(
+            ...review(
+              'SEQUENCE:1',
+              weekly,
+              'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
+            ),
+          ),
+        ),
+        tag: 'InvitationError',
+      },
+    ],
+    [
+      'to store an update without a changed occurrence',
+      {
+        report: copies([copyHref, storedCopy('ACCEPTED', ...changed)]),
+        invitation: received(invitationIcs(...review('SEQUENCE:1'))),
         tag: 'InvitationError',
       },
     ],

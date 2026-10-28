@@ -25,9 +25,10 @@ import {
   writableCalendar,
 } from './calendar-write';
 import { organizerAddress } from './event-attendees';
-import { parseCalendar } from './event-fields';
+import { type CalendarObject, parseCalendar } from './event-fields';
 import {
   answerOf,
+  dropsOccurrences,
   giveAnswer,
   givesAnswer,
   type InvitationReply,
@@ -36,6 +37,7 @@ import {
   type Partstat,
   partiesOf,
   type ReceivedInvitation,
+  sentAnswerStatus,
   sequenceOf,
   unansweredCopy,
 } from './invitation';
@@ -166,6 +168,61 @@ type ServerAnswer = {
   readonly partstat: Partstat;
 };
 
+// Whether the server must be made to send the answer, which it otherwise
+// sends only when the answer changes, or why pim cannot answer in the copy.
+// The content replaces the stored event when the invitation is newer.
+const forceFor = (
+  {
+    invitation,
+    attendee,
+    partstat,
+  }: {
+    readonly invitation: ReceivedInvitation;
+    readonly attendee: string;
+    readonly partstat: Partstat;
+  },
+  href: string,
+  {
+    stored,
+    content,
+  }: { readonly stored: CalendarObject; readonly content: CalendarObject },
+): Effect.Effect<boolean, InvitationError> => {
+  const refuse = (message: string) =>
+    Effect.fail(new InvitationError({ message }));
+  if (answerOf(content, attendee) === undefined) {
+    return refuse(
+      `${href} does not list ${attendee} as an attendee, so pim cannot answer the meeting there`,
+    );
+  }
+  const replaces = content !== stored;
+  if (replaces && dropsOccurrences(stored, content)) {
+    return refuse(
+      `${invitation.source} drops occurrences of the meeting that ${href} holds, and the server would send answers for those as well. Answer it in a calendar app`,
+    );
+  }
+  const force = givesAnswer(stored, attendee, partstat);
+  if (!force) {
+    return Effect.succeed(false);
+  }
+  // sabre/dav drops SCHEDULE-FORCE-SEND after use only from the first event,
+  // and a flag left stored would resend the answer on every later change, so
+  // pim forces only a lone event.
+  if (content.vcalendar.getAllSubcomponents('vevent').length > 1) {
+    return refuse(
+      `${href} already answers ${partstat}. pim cannot make the server send that answer again for a meeting with changed occurrences`,
+    );
+  }
+  // An answer the server already sent, as when a write it committed failed
+  // on the way back, goes out only once.
+  const sent = sentAnswerStatus(stored);
+  if (!replaces && sent !== undefined) {
+    return refuse(
+      `${href} already answers ${partstat}, and the server reports that it sent this answer to the organizer (SCHEDULE-STATUS ${sent}), so pim does not send it again`,
+    );
+  }
+  return Effect.succeed(true);
+};
+
 // Gives the answer in the user's copy of the event, which makes the server
 // send it to the organizer (RFC 6638, section 3.2.2.2). An invitation newer
 // than the copy replaces it.
@@ -202,21 +259,10 @@ const answerOnServer = (
       invitation.sequence > sequenceOf(stored.object.master)
         ? yield* parseCalendar(href, unansweredCopy(invitation, attendee))
         : stored.object;
-    if (answerOf(content, attendee) === undefined) {
-      return yield* new InvitationError({
-        message: `${href} does not list ${attendee} as an attendee, so pim cannot answer the meeting there`,
-      });
-    }
-    // A server sends the answer when it changes, so sending the same answer
-    // again takes SCHEDULE-FORCE-SEND. sabre/dav drops that flag after use
-    // only from the first event, and a flag left stored would resend the
-    // answer on every later change, so pim forces only a lone event.
-    const force = givesAnswer(stored.object, attendee, partstat);
-    if (force && content.vcalendar.getAllSubcomponents('vevent').length > 1) {
-      return yield* new InvitationError({
-        message: `${href} already answers ${partstat}. pim cannot make the server send that answer again for a meeting with changed occurrences`,
-      });
-    }
+    const force = yield* forceFor({ invitation, attendee, partstat }, href, {
+      stored: stored.object,
+      content,
+    });
     giveAnswer(content, attendee, { partstat, force });
     const ics = content.vcalendar.toString();
     const detail = (newEtag: string | undefined) =>
