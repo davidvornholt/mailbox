@@ -212,7 +212,7 @@ describe('deleteContact', () => {
 
   it('refuses a contact group', async () => {
     const { error, requests } = await failsOnFakeDav(
-      contactRoutes(vcardOf('FN:Team', 'KIND:individual', 'KIND:group')),
+      contactRoutes(vcardOf('FN:Team', 'KIND:individual', 'KIND: group ')),
       deleteContact(davAccount, target),
     );
     expect(error._tag).toBe('ContactChangeError');

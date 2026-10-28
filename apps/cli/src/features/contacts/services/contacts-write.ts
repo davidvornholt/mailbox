@@ -19,7 +19,7 @@ import {
   replaceContactResource,
 } from './carddav';
 import { type ContactsError, findAddressBook, readContact } from './contacts';
-import { contactDetail, firstText, parseVCard } from './vcard';
+import { clean, contactDetail, firstText, parseVCard } from './vcard';
 import {
   applyContactChanges,
   type ContactChanges,
@@ -94,7 +94,7 @@ const isGroup = (card: ICAL.Component): boolean =>
   ['kind', 'x-addressbookserver-kind'].some((name) =>
     card
       .getAllProperties(name)
-      .some((kind) => String(kind.getFirstValue()).toLowerCase() === 'group'),
+      .some((kind) => clean(kind.getFirstValue())?.toLowerCase() === 'group'),
   );
 
 // The contact at the target's href, provided it is still the version the
