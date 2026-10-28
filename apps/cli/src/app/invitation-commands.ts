@@ -17,7 +17,6 @@ const messageFlags = {
   uid: flag.integer('n', 'Message uid from a search hit'),
 } as const;
 
-// The invitation in a message, with the account it arrived in.
 const receivedInvitation = (values: {
   readonly account: string;
   readonly folder: string;

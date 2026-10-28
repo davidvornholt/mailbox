@@ -24,6 +24,7 @@ import {
   storedDetail,
   writableCalendar,
 } from './calendar-write';
+import { organizerAddress } from './event-attendees';
 import { parseCalendar } from './event-fields';
 import {
   answerOf,
@@ -85,14 +86,14 @@ const replyOutcome = (
   );
 
 // The calendar that holds the event, or gets it: the one wanted, else the
-// only one the user may write to.
+// only one the user may write to. None when the user may write to none.
 const eventCalendar = (
   client: DavClient,
   account: Account,
   uid: string,
   wanted: string | undefined,
 ): Effect.Effect<
-  { readonly calendar: Calendar; readonly copy?: EventCopy },
+  { readonly calendar: Calendar; readonly copy?: EventCopy } | undefined,
   CalendarWriteError | InvitationError
 > =>
   Effect.gen(function* () {
@@ -113,16 +114,13 @@ const eventCalendar = (
       return { calendar: copy.calendar, copy };
     }
     const [only, second] = candidates;
-    if (only === undefined || second !== undefined) {
+    if (second !== undefined) {
       return yield* new CalendarNotFoundError({
         calendar: '',
-        message:
-          only === undefined
-            ? `${account.email} has no calendar it may write to`
-            : `${account.email} has several calendars; pass --calendar with the one to add the meeting to: ${describeCollections(candidates)}`,
+        message: `${account.email} has several calendars; pass --calendar with the one to add the meeting to: ${describeCollections(candidates)}`,
       });
     }
-    return { calendar: only };
+    return only === undefined ? undefined : { calendar: only };
   });
 
 // Adds the invitation to the calendar with the user's answer still open, so
@@ -188,6 +186,12 @@ const answerOnServer = (
         local,
       ));
     const { href, etag } = stored.resource;
+    const organizer = organizerAddress(stored.object.master);
+    if (organizer !== parties.organizer) {
+      return yield* new InvitationError({
+        message: `${href} holds a meeting with the same UID that ${organizer ?? 'nobody'} organizes, not ${parties.organizer}, so pim leaves it unchanged`,
+      });
+    }
     if (etag === undefined) {
       return yield* new EventChangeError({
         href,
@@ -249,19 +253,23 @@ export const answerInvitation = (
       account.email,
       ...addresses,
     ]);
-    const { calendar, copy } = yield* eventCalendar(
-      client,
-      account,
-      invitation.uid,
-      answer.calendar,
-    );
+    const place =
+      addresses.includes(parties.attendee) && principal.calendarHomes.length > 0
+        ? yield* eventCalendar(client, account, invitation.uid, answer.calendar)
+        : undefined;
     if (
-      !(
-        addresses.includes(parties.attendee) &&
-        (yield* schedulesFor(client, calendar.href))
-      )
+      place === undefined ||
+      !(yield* schedulesFor(client, place.calendar.href))
     ) {
       return yield* replyOutcome(account, invitation, parties, partstat);
+    }
+    const { calendar, copy } = place;
+    // The calendar keeps the series and its changed occurrences in one
+    // object, which an answer for one occurrence alone would overwrite.
+    if (invitation.object.master.hasProperty('recurrence-id')) {
+      return yield* new InvitationError({
+        message: `${invitation.source} is for one occurrence of a recurring meeting, which pim cannot answer in the calendar yet. Answer it in a calendar app`,
+      });
     }
     if (!answer.notifyOrganizer) {
       return yield* new EventHasAttendeesError({

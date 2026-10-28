@@ -84,6 +84,16 @@ describe('partiesOf', () => {
       'no organizer',
     ],
     [
+      'an invitation whose organizer is several addresses',
+      received(
+        invitationIcs(...review()).replace(
+          'mailto:boss@example.com',
+          'mailto:boss@example.com,extra@example.com',
+        ),
+      ),
+      'single email address',
+    ],
+    [
       'an invitation for someone else',
       received(
         invitationIcs(...review()).replace('me@example.com', 'bo@example.com'),

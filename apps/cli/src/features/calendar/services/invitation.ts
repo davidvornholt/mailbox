@@ -1,7 +1,7 @@
 import { Effect, Result } from 'effect';
 import ICAL from 'ical.js';
 import { CalendarDataError } from '../errors/errors';
-import { addressOf, organizerAddress } from './event-attendees';
+import { addressOf, isEmailAddress, organizerAddress } from './event-attendees';
 import { type CalendarObject, parseCalendar, text } from './event-fields';
 import { productId } from './event-write';
 
@@ -127,6 +127,11 @@ export const partiesOf = (
   const attendee = ownAttendee(object, own);
   if (organizer === undefined) {
     return Result.fail('names no organizer to answer');
+  }
+  if (!isEmailAddress(organizer)) {
+    return Result.fail(
+      `names the organizer "${organizer}", which is no single email address pim can answer`,
+    );
   }
   if (own.includes(organizer)) {
     return Result.fail(

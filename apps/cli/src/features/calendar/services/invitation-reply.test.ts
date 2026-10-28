@@ -15,10 +15,10 @@ import {
   unfolded,
 } from './calendar-write.fixture';
 import { berlin, icsOf, vevent } from './ical.fixture';
-import { unansweredCopy } from './invitation';
+import { type ReceivedInvitation, unansweredCopy } from './invitation';
 import { invitationIcs, received, review } from './invitation.fixture';
 import { describeInvitation } from './invitation-copies';
-import { answerInvitation } from './invitation-reply';
+import { answerInvitation, type InvitationAnswer } from './invitation-reply';
 
 const copyHref = '/calendars/me/work/copy.ics';
 const newResource = /\/calendars\/me\/work\/[\w-]+\.ics$/u;
@@ -152,49 +152,104 @@ describe('answerInvitation through the calendar server', () => {
   });
 });
 
+// An invitation for one occurrence of a recurring meeting.
+const occurrence = invitationIcs(
+  ...vevent(
+    'ORGANIZER;CN=Boss:mailto:boss@example.com',
+    'ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me:mailto:me@example.com',
+    'UID:review@example.com',
+    'RECURRENCE-ID;TZID=W. Europe Standard Time:20261111T100000',
+    'SUMMARY:Review',
+    'DTSTART;TZID=W. Europe Standard Time:20261111T120000',
+    'DTEND;TZID=W. Europe Standard Time:20261111T130000',
+    'DTSTAMP:20261028T080000Z',
+    'SEQUENCE:1',
+  ),
+);
+
+type Refusal = {
+  readonly report: Routes[string];
+  readonly answer?: InvitationAnswer;
+  readonly invitation?: ReceivedInvitation;
+  readonly tag: string;
+};
+
 describe('answerInvitation refusals', () => {
-  it.each([
+  it.each<readonly [string, Refusal]>([
     [
       'without --notify-organizer',
-      copies(),
-      { ...accept, notifyOrganizer: false },
-      'EventHasAttendeesError',
+      {
+        report: copies(),
+        answer: { ...accept, notifyOrganizer: false },
+        tag: 'EventHasAttendeesError',
+      },
+    ],
+    [
+      'an answer for one occurrence',
+      {
+        report: copies([copyHref, storedCopy('NEEDS-ACTION')]),
+        invitation: received(occurrence),
+        tag: 'InvitationError',
+      },
+    ],
+    [
+      'to answer a meeting with the same UID from another organizer',
+      {
+        report: copies([copyHref, storedCopy('NEEDS-ACTION')]),
+        invitation: received(
+          invitationIcs(...review()).replace(
+            'boss@example.com',
+            'other@example.com',
+          ),
+        ),
+        tag: 'InvitationError',
+      },
     ],
     [
       'when the meeting is in two calendars',
-      copies(
-        [copyHref, storedCopy('NEEDS-ACTION')],
-        ['/calendars/me/work/again.ics', storedCopy('NEEDS-ACTION')],
-      ),
-      accept,
-      'InvitationError',
+      {
+        report: copies(
+          [copyHref, storedCopy('NEEDS-ACTION')],
+          ['/calendars/me/work/again.ics', storedCopy('NEEDS-ACTION')],
+        ),
+        tag: 'InvitationError',
+      },
     ],
     [
       'to resend an answer for a meeting with changed occurrences',
-      copies([
-        copyHref,
-        storedCopy(
-          'ACCEPTED',
-          ...vevent(
-            'UID:review@example.com',
-            'RECURRENCE-ID:20261111T090000Z',
-            'DTSTART:20261111T100000Z',
-            'ORGANIZER:mailto:boss@example.com',
-            'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
+      {
+        report: copies([
+          copyHref,
+          storedCopy(
+            'ACCEPTED',
+            ...vevent(
+              'UID:review@example.com',
+              'RECURRENCE-ID:20261111T090000Z',
+              'DTSTART:20261111T100000Z',
+              'ORGANIZER:mailto:boss@example.com',
+              'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
+            ),
           ),
-        ),
-      ]),
-      accept,
-      'InvitationError',
+        ]),
+        tag: 'InvitationError',
+      },
     ],
-  ])('refuses %s without writing', async (_name, report, answer, tag) => {
-    const { error, requests } = await failsOnFakeDav(
-      routesWith(report),
-      answerInvitation(davAccount, received(), answer, berlin),
-    );
-    expect(error).toMatchObject({ _tag: tag });
-    expect(writeRequests(requests)).toEqual([]);
-  });
+  ])(
+    'refuses %s without writing',
+    async (_name, {
+      report,
+      answer = accept,
+      invitation = received(),
+      tag,
+    }) => {
+      const { error, requests } = await failsOnFakeDav(
+        routesWith(report),
+        answerInvitation(davAccount, invitation, answer, berlin),
+      );
+      expect(error).toMatchObject({ _tag: tag });
+      expect(writeRequests(requests)).toEqual([]);
+    },
+  );
 });
 
 describe('answerInvitation by email', () => {
@@ -206,6 +261,21 @@ describe('answerInvitation by email', () => {
       'when the server does not send answers',
       davAccount,
       { ...routesWith(copies()), 'OPTIONS /calendars/me/work/': noScheduling },
+    ],
+    [
+      'when the account may only read its calendars',
+      davAccount,
+      {
+        ...routesWith(copies()),
+        'PROPFIND /calendars/me/': {
+          body: multistatus(
+            davResponse(
+              '/calendars/me/shared/',
+              '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:current-user-privilege-set><d:privilege><d:read/></d:privilege></d:current-user-privilege-set>',
+            ),
+          ),
+        },
+      },
     ],
   ])('returns the reply %s', async (_name, account, routes) => {
     const { value, requests } = await succeedsOnFakeDav(

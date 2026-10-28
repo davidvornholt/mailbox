@@ -68,7 +68,6 @@ export type FullMessage = {
   readonly attachments: ReadonlyArray<MessageAttachment>;
 };
 
-// The headers a reply to the message threads on.
 export type MessageThread = Pick<
   FullMessage,
   'messageId' | 'inReplyTo' | 'references'

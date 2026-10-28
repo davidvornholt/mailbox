@@ -11,9 +11,13 @@ export type Organizer = {
 
 const mailtoScheme = /^mailto:/iu;
 
-// An address pim writes into an invitation. It holds no space, quote, or
-// separator, which would end or split the iCalendar value.
+// An address pim writes into an invitation or answers. It holds no space,
+// quote, or separator, which would end or split the iCalendar value or add
+// a recipient.
 const emailAddress = /^[^\s"(),:;<>@[\\\]]+@[^\s"(),:;<>@[\\\]]+$/u;
+
+export const isEmailAddress = (email: string): boolean =>
+  emailAddress.test(email.trim());
 
 const keyOf = (email: string): string => email.trim().toLowerCase();
 
@@ -74,7 +78,7 @@ export const newAttendees = (
   emails: ReadonlyArray<string>,
   taken: ReadonlySet<string>,
 ): Result.Result<ReadonlyArray<string>, string> => {
-  const invalid = emails.find((email) => !emailAddress.test(email.trim()));
+  const invalid = emails.find((email) => !isEmailAddress(email));
   if (invalid !== undefined) {
     return Result.fail(`"${invalid}" is not an email address`);
   }
