@@ -98,26 +98,28 @@ export const exclude = (
   series.addProperty(exdate);
 };
 
-// Gives a series that replaces another the cancellations pim recorded in
-// the other that are no older than it, also where the series excludes the
-// occurrence itself but as of an older SEQUENCE. Both must be in the
-// calendar, so that their times resolve.
+// Gives a series that replaces another, occurrence by occurrence, the
+// cancellations pim recorded in the other that are no older than it, also
+// where the series excludes the occurrence itself but as of an older
+// SEQUENCE. Both must be in the calendar, so that their times resolve.
 export const keepCancellations = (
   before: ICAL.Component,
   series: ICAL.Component,
 ): void => {
   for (const exdate of before.getAllProperties('exdate')) {
     const cancellation = cancellationOf(exdate);
-    const keys = keysOf(exdate);
-    if (
-      cancellation !== undefined &&
-      cancellation >= sequenceOf(series) &&
-      keys.some((key) => (excludedSince(series, key) ?? -1) < cancellation)
-    ) {
-      for (const key of keys) {
+    if (cancellation === undefined || cancellation < sequenceOf(series)) {
+      continue;
+    }
+    const tzid = exdate.getParameter('tzid');
+    for (const value of exdate.getValues()) {
+      const key = timeKey(value, tzid);
+      if ((excludedSince(series, key) ?? -1) < cancellation) {
         removeExclusion(series, key);
+        const kept = new ICAL.Property(structuredClone(exdate.toJSON()));
+        kept.setValues([value]);
+        series.addProperty(kept);
       }
-      series.addProperty(new ICAL.Property(structuredClone(exdate.toJSON())));
     }
   }
 };

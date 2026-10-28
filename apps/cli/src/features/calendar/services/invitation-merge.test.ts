@@ -291,6 +291,19 @@ describe('importChange of a message the copy holds', () => {
       ),
     ],
     [
+      'an invitation to an occurrence older than its cancellation, after a series update that does not exclude it',
+      received(invitationIcs(...occurrenceAt(6))),
+      replayed(
+        storedSeries(
+          'ACCEPTED',
+          weekly,
+          'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=7:20261111T100000',
+          'EXDATE;TZID=W. Europe Standard Time;X-PIM-SEQUENCE=5:20261111T100000,20261118T100000',
+        ),
+        received(invitationIcs(...review('SEQUENCE:3', weekly))),
+      ),
+    ],
+    [
       'an invitation older than a repeated cancellation',
       received(invitationIcs(...review('SEQUENCE:2'))),
       replayed(
