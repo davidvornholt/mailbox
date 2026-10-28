@@ -24,8 +24,8 @@ export class ReadOnlyCalendarError extends Schema.TaggedError<ReadOnlyCalendarEr
   },
 ) {}
 
-// The event has attendees other than its organizer. Changing or deleting it
-// can make the server email them (RFC 6638), so pim refuses.
+// The write would make the server email attendees (RFC 6638), and the user
+// did not ask to notify them or does not organize the meeting.
 export class EventHasAttendeesError extends Schema.TaggedError<EventHasAttendeesError>()(
   'EventHasAttendeesError',
   {
@@ -38,6 +38,16 @@ export class EventHasAttendeesError extends Schema.TaggedError<EventHasAttendees
 // series.
 export class EventChangeError extends Schema.TaggedError<EventChangeError>()(
   'EventChangeError',
+  {
+    href: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+// The server would not send the invitations pim asks for, or pim cannot
+// tell from which address.
+export class SchedulingUnsupportedError extends Schema.TaggedError<SchedulingUnsupportedError>()(
+  'SchedulingUnsupportedError',
   {
     href: Schema.String,
     message: Schema.String,

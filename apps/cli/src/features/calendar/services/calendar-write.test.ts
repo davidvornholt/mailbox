@@ -1,54 +1,26 @@
 import { describe, expect, it } from 'bun:test';
 import {
   davAccount,
-  davResponse,
-  discoveryRoutes,
-  type FakeReply,
   failsOnFakeDav,
-  multistatus,
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
+import { createEvent, deleteEvent, updateEvent } from './calendar-write';
 import {
-  createEvent,
-  deleteEvent,
-  type EventTarget,
-  updateEvent,
-} from './calendar-write';
-import { berlin, icsOf, vevent, weeklySeries } from './ical.fixture';
-
-type Routes = Readonly<Record<string, FakeReply>>;
-
-const privileges = (name: string) =>
-  `<d:current-user-privilege-set><d:privilege><d:${name}/></d:privilege></d:current-user-privilege-set>`;
-
-const calendarRoutes: Routes = {
-  ...discoveryRoutes,
-  'PROPFIND /calendars/me/': {
-    body: multistatus(
-      davResponse(
-        '/calendars/me/work/',
-        `<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Work</d:displayname>${privileges('all')}`,
-      ),
-      davResponse(
-        '/calendars/me/shared/',
-        `<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Shared</d:displayname>${privileges('read')}`,
-      ),
-    ),
-  },
-};
+  calendarRoutes,
+  eventRoutes,
+  href,
+  invitation,
+  meeting,
+  noScheduling,
+  single,
+  target,
+  trip,
+} from './calendar-write.fixture';
+import { berlin, icsOf, weeklySeries } from './ical.fixture';
 
 const newHref = /^\/calendars\/me\/work\/(?<uid>[0-9a-f-]{36})\.ics$/u;
 const scheduling = /ORGANIZER|ATTENDEE/u;
-
-const trip = {
-  title: 'Trip',
-  span: {
-    _tag: 'Days',
-    first: { year: 2026, month: 10, day: 30 },
-    last: { year: 2026, month: 10, day: 31 },
-  },
-} as const;
 
 describe('createEvent', () => {
   it('stores a new event that invites no one', async () => {
@@ -57,7 +29,11 @@ describe('createEvent', () => {
         ...calendarRoutes,
         'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
       },
-      createEvent(davAccount, { calendar: 'Work', ...trip }, berlin),
+      createEvent(
+        davAccount,
+        { calendar: 'Work', ...trip, attendees: [], notifyAttendees: false },
+        berlin,
+      ),
     );
     const [put] = writeRequests(requests);
     const { uid } = newHref.exec(value.href)?.groups ?? {};
@@ -84,50 +60,16 @@ describe('createEvent', () => {
   it('refuses a calendar the user may only read', async () => {
     const { error, requests } = await failsOnFakeDav(
       calendarRoutes,
-      createEvent(davAccount, { calendar: 'Shared', ...trip }, berlin),
+      createEvent(
+        davAccount,
+        { calendar: 'Shared', ...trip, attendees: [], notifyAttendees: false },
+        berlin,
+      ),
     );
     expect(error._tag).toBe('ReadOnlyCalendarError');
     expect(writeRequests(requests)).toEqual([]);
   });
 });
-
-const href = '/calendars/me/work/m.ics';
-
-const single = vevent(
-  'UID:m@example.com',
-  'DTSTAMP:20261001T000000Z',
-  'SUMMARY:Planning',
-  'DTSTART:20261028T090000Z',
-  'DTEND:20261028T100000Z',
-);
-
-// The event at href, whose GET answers with these headers.
-const eventRoutes = (
-  ics: string,
-  headers: Readonly<Record<string, string>> = { etag: '"v1"' },
-): Routes => ({
-  [`GET ${href}`]: { status: 200, body: ics, headers },
-  [`PUT ${href}`]: { status: 204, headers: { etag: '"v2"' } },
-  [`DELETE ${href}`]: { status: 204 },
-});
-
-const target = (changes: Partial<EventTarget> = {}): EventTarget => ({
-  href,
-  etag: '"v1"',
-  series: false,
-  ...changes,
-});
-
-const meeting = vevent(
-  'UID:m@example.com',
-  'DTSTAMP:20261001T000000Z',
-  'SUMMARY:Planning',
-  'DTSTART:20261028T090000Z',
-  'DTEND:20261028T100000Z',
-  'ORGANIZER:mailto:me@example.com',
-  'ATTENDEE:mailto:me@example.com',
-  'ATTENDEE:mailto:ana@example.com',
-);
 
 describe('updateEvent', () => {
   it('changes the version the caller read', async () => {
@@ -165,6 +107,36 @@ describe('updateEvent', () => {
       'a recurring event without --series',
       eventRoutes(icsOf(...weeklySeries)),
       target(),
+      'EventChangeError',
+    ],
+    [
+      'a meeting someone else organizes',
+      eventRoutes(icsOf(...invitation)),
+      target({ notifyAttendees: true }),
+      'EventHasAttendeesError',
+    ],
+    [
+      'a meeting on a server that does not send updates',
+      { ...eventRoutes(icsOf(...meeting)), [`OPTIONS ${href}`]: noScheduling },
+      target({ notifyAttendees: true }),
+      'SchedulingUnsupportedError',
+    ],
+    [
+      'a meeting with an attendee the server does not email',
+      eventRoutes(
+        icsOf(
+          ...meeting.map((line) =>
+            line.replace('ATTENDEE;', 'ATTENDEE;SCHEDULE-AGENT=CLIENT;'),
+          ),
+        ),
+      ),
+      target({ notifyAttendees: true }),
+      'SchedulingUnsupportedError',
+    ],
+    [
+      '--notify-attendees for an event without attendees',
+      eventRoutes(icsOf(...single)),
+      target({ notifyAttendees: true }),
       'EventChangeError',
     ],
   ])('refuses %s', async (_name, routes, wanted, tag) => {

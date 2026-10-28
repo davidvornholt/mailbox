@@ -110,7 +110,19 @@ const attendeesOf = (component: ICAL.Component): ReadonlyArray<Attendee> =>
         ? undefined
         : parameter(property, 'rsvp')?.toUpperCase() === 'TRUE',
     ),
+    ...optional('scheduleStatus', parameter(property, 'schedule-status')),
   }));
+
+const attendeeSet = (component: ICAL.Component): string =>
+  [
+    ...new Set(
+      component
+        .getAllProperties('attendee')
+        .map((property) => address(property).toLowerCase()),
+    ),
+  ]
+    .toSorted()
+    .join(' ');
 
 const lastDay = (start: ICAL.Time, end: ICAL.Time): ICAL.Time => {
   const day = end.clone();
@@ -211,6 +223,12 @@ const changeOf = (
     ...optional('summary', differs('summary')),
     ...optional('status', lowercase(differs('status'))),
     ...optional('location', differs('location')),
+    ...optional(
+      'attendees',
+      attendeeSet(override.component) === attendeeSet(master)
+        ? undefined
+        : override.component.getAllProperties('attendee').map(address),
+    ),
   };
 };
 
@@ -220,11 +238,14 @@ const recurrenceOf = (
   local: DateTime.TimeZone,
 ): EventDetail['recurrence'] => {
   const rule = master.getFirstPropertyValue('rrule');
-  if (!(rule instanceof ICAL.Recur)) {
+  if (!(rule instanceof ICAL.Recur) && overrides.length === 0) {
     return undefined;
   }
   return {
-    rule: rule.toString(),
+    ...optional(
+      'rule',
+      rule instanceof ICAL.Recur ? rule.toString() : undefined,
+    ),
     excluded: master.getAllProperties('exdate').flatMap((property) =>
       property
         .getValues()

@@ -1,23 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect, Result } from 'effect';
 import { type CalendarObject, parseCalendar } from './event-fields';
-import {
-  applyChanges,
-  type EventChanges,
-  newEventIcs,
-  otherAttendees,
-} from './event-write';
-import {
-  berlin,
-  icsOf,
-  vcalendarOf,
-  vevent,
-  weeklySeries,
-} from './ical.fixture';
+import { applyChanges, type EventChanges, newEventIcs } from './event-write';
+import { berlin, icsOf, vevent, weeklySeries } from './ical.fixture';
 
 const nowMs = Date.parse('2026-10-28T09:15:00.250Z');
 
-const lines = (ics: string) => ics.split('\r\n');
+// The content lines of the text, with folded lines joined again.
+const lines = (ics: string) => ics.replaceAll('\r\n ', '').split('\r\n');
 const invitation = /ORGANIZER|ATTENDEE|VALARM/u;
 const oldDescription = /LOCATION|X-ALT-DESC|ALTREP/u;
 const endOrDuration = /DTEND|DURATION/u;
@@ -74,63 +64,34 @@ describe('newEventIcs', () => {
     expect(lines(ics)).toContain('DESCRIPTION:Agenda:\\nfirst');
     expect(ics).not.toMatch(invitation);
   });
-});
 
-describe('otherAttendees', () => {
-  it.each([
-    ['no attendees', vevent('UID:a', 'ORGANIZER:mailto:me@example.com'), []],
-    [
-      'only the organizer',
-      vevent(
-        'UID:a',
-        'ORGANIZER:mailto:me@example.com',
-        'ATTENDEE:MAILTO:Me@Example.com',
-      ),
-      [],
-    ],
-    [
-      'a guest',
-      vevent(
-        'UID:a',
-        'ORGANIZER:mailto:me@example.com',
-        'ATTENDEE:mailto:me@example.com',
-        'ATTENDEE;CN=Ana:mailto:ana@example.com',
-      ),
-      ['ana@example.com'],
-    ],
-    [
-      'an invitation from someone else',
-      vevent(
-        'UID:a',
-        'ORGANIZER:mailto:boss@example.com',
-        'ATTENDEE:mailto:me@example.com',
-      ),
-      ['me@example.com'],
-    ],
-    [
-      'an attendee without an organizer',
-      vevent('UID:a', 'ATTENDEE:mailto:me@example.com'),
-      ['me@example.com'],
-    ],
-  ])('finds %s', (_name, event, expected) => {
-    expect(otherAttendees(vcalendarOf(...event))).toEqual(expected);
-  });
-
-  it('checks every occurrence of a series', () => {
-    expect(
-      otherAttendees(
-        vcalendarOf(
-          ...weeklySeries,
-          ...vevent(
-            'UID:series@example.com',
-            'RECURRENCE-ID;TZID=Europe/Berlin:20261027T100000',
-            'DTSTART;TZID=Europe/Berlin:20261027T120000',
-            'DTEND;TZID=Europe/Berlin:20261027T130000',
-            'ATTENDEE:mailto:guest@example.com',
-          ),
-        ),
-      ),
-    ).toEqual(['guest@example.com']);
+  it('writes an invitation without alarms', () => {
+    const ics = newEventIcs(
+      {
+        uid: 'u3',
+        title: 'Planning',
+        span: {
+          _tag: 'Times',
+          startMs: Date.parse('2026-10-28T13:30:00Z'),
+          endMs: Date.parse('2026-10-28T14:00:00Z'),
+        },
+        invitation: {
+          organizer: { email: 'me@example.com', name: 'Me, Myself' },
+          attendees: ['ana@example.com', 'bo@example.org'],
+        },
+      },
+      nowMs,
+    );
+    expect(lines(ics)).toContain(
+      'ORGANIZER;CN="Me, Myself":mailto:me@example.com',
+    );
+    expect(lines(ics)).toContain(
+      'ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:ana@example.com',
+    );
+    expect(lines(ics)).toContain(
+      'ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:bo@example.org',
+    );
+    expect(ics).not.toContain('VALARM');
   });
 });
 
@@ -267,5 +228,91 @@ describe('applyChanges', () => {
     expect(Result.isFailure(result) && result.failure).toContain(
       'pim does not move recurring events',
     );
+  });
+});
+
+describe('applyChanges to a meeting', () => {
+  const guests = [
+    'ORGANIZER;CN=Me:mailto:me@example.com',
+    'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
+    'ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:ana@example.com',
+  ];
+
+  it('asks the attendees of a moved meeting to reply again', () => {
+    const { result, ics } = changed(
+      objectOf(...meeting.slice(0, -1), ...guests, 'END:VEVENT'),
+      {
+        start: { _tag: 'Instant', ms: Date.parse('2026-10-29T08:00:00Z') },
+      },
+    );
+    expect(result).toEqual(Result.void);
+    expect(ics).toContain('ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com');
+    expect(ics).toContain(
+      'ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:ana@example.com',
+    );
+  });
+
+  it('keeps the replies when the times stay the same', () => {
+    const { result, ics } = changed(
+      objectOf(...meeting.slice(0, -1), ...guests, 'END:VEVENT'),
+      {
+        title: 'Planning, final',
+        start: { _tag: 'Instant', ms: Date.parse('2026-10-28T09:00:00Z') },
+        end: { _tag: 'Instant', ms: Date.parse('2026-10-28T10:30:00Z') },
+      },
+    );
+    expect(result).toEqual(Result.void);
+    expect(ics).toContain('DTSTART;TZID=Europe/Berlin:20261028T100000');
+    expect(ics).toContain('SEQUENCE:2');
+    expect(ics).toContain(
+      'ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:ana@example.com',
+    );
+  });
+
+  it('invites and takes off attendees on the series and its occurrences', () => {
+    const withGuests = (event: ReadonlyArray<string>) => [
+      ...event.slice(0, -1),
+      ...guests,
+      'END:VEVENT',
+    ];
+    const { result, ics } = changed(
+      objectOf(
+        ...withGuests(weeklySeries),
+        ...withGuests(
+          vevent(
+            'UID:series@example.com',
+            'DTSTAMP:20261001T000000Z',
+            'RECURRENCE-ID;TZID=Europe/Berlin:20261027T100000',
+            'DTSTART;TZID=Europe/Berlin:20261027T120000',
+            'DTEND;TZID=Europe/Berlin:20261027T130000',
+          ),
+        ),
+      ),
+      {
+        addAttendees: ['bo@example.org'],
+        removeAttendees: ['ANA@example.com'],
+      },
+    );
+    expect(result).toEqual(Result.void);
+    expect(ics.filter((line) => line.startsWith('ATTENDEE'))).toEqual([
+      'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
+      'ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:bo@example.org',
+      'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
+      'ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:bo@example.org',
+    ]);
+    expect(
+      ics.filter((line) => line === 'DTSTAMP:20261028T091500Z'),
+    ).toHaveLength(2);
+  });
+
+  it('leaves the event alone when an attendee change does not apply', () => {
+    const object = objectOf(...meeting.slice(0, -1), ...guests, 'END:VEVENT');
+    const before = object.vcalendar.toString();
+    const { result } = changed(object, {
+      title: 'Never written',
+      removeAttendees: ['bo@example.org'],
+    });
+    expect(result).toEqual(Result.fail('bo@example.org is not an attendee'));
+    expect(object.vcalendar.toString()).toBe(before);
   });
 });

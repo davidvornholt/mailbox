@@ -2,6 +2,14 @@ import type { DateTime } from 'effect';
 import { Result } from 'effect';
 import ICAL from 'ical.js';
 import { addDays, type CalendarDate, daysBetween } from './calendar-dates';
+import {
+  addAttendees,
+  attendeeChanges,
+  changeAttendees,
+  type Organizer,
+  resetReplies,
+  setOrganizer,
+} from './event-attendees';
 import { type CalendarObject, spanOf, text } from './event-fields';
 import { changedSpan, type EventSpan, type EventTime } from './event-times';
 import { registerIanaZones } from './ical-time';
@@ -15,15 +23,23 @@ export type EventText = {
   readonly description?: string;
 };
 
+export type Invitation = {
+  readonly organizer: Organizer;
+  readonly attendees: ReadonlyArray<string>;
+};
+
 export type NewEvent = EventText & {
   readonly uid: string;
   readonly title: string;
   readonly span: EventSpan;
+  readonly invitation?: Invitation;
 };
 
 export type EventChanges = EventText & {
   readonly start?: EventTime;
   readonly end?: EventTime;
+  readonly addAttendees?: ReadonlyArray<string>;
+  readonly removeAttendees?: ReadonlyArray<string>;
 };
 
 const utcTime = (ms: number): ICAL.Time =>
@@ -79,8 +95,8 @@ const setText = (
   }
 };
 
-// The iCalendar text of an event without organizer, attendees, or alarms,
-// so storing it invites no one.
+// The iCalendar text of an event without alarms. Without an invitation it
+// has no organizer or attendees, so storing it invites no one.
 export const newEventIcs = (event: NewEvent, nowMs: number): string => {
   const vcalendar = new ICAL.Component(['vcalendar', [], []]);
   vcalendar.addPropertyWithValue('version', '2.0');
@@ -97,37 +113,12 @@ export const newEventIcs = (event: NewEvent, nowMs: number): string => {
       setText(vevent, name, value);
     }
   }
+  if (event.invitation !== undefined) {
+    setOrganizer(vevent, event.invitation.organizer);
+    addAttendees(vevent, event.invitation.attendees);
+  }
   vcalendar.addSubcomponent(vevent);
   return vcalendar.toString();
-};
-
-const mailtoScheme = /^mailto:/iu;
-
-const addressOf = (property: ICAL.Property): string =>
-  String(property.getFirstValue() ?? '')
-    .replace(mailtoScheme, '')
-    .trim()
-    .toLowerCase();
-
-// The attendees of any event in the object other than its organizer. A
-// server that schedules (RFC 6638) emails them when the event changes or is
-// deleted, or tells the organizer when an attendee deletes it.
-export const otherAttendees = (
-  vcalendar: ICAL.Component,
-): ReadonlyArray<string> => {
-  const found = new Set<string>();
-  for (const vevent of vcalendar.getAllSubcomponents('vevent')) {
-    const organizer = vevent.getFirstProperty('organizer');
-    const organizerAddress =
-      organizer === null ? undefined : addressOf(organizer);
-    for (const attendee of vevent.getAllProperties('attendee')) {
-      const address = addressOf(attendee);
-      if (address !== organizerAddress) {
-        found.add(address);
-      }
-    }
-  }
-  return [...found];
 };
 
 export const isRecurring = ({ master, overrides }: CalendarObject): boolean =>
@@ -151,6 +142,14 @@ const currentSpan = (
     last: daysBetween(first, last) < 0 ? first : last,
   };
 };
+
+const sameSpan = (a: EventSpan, b: EventSpan): boolean =>
+  a._tag === 'Days' && b._tag === 'Days'
+    ? daysBetween(a.first, b.first) === 0 && daysBetween(a.last, b.last) === 0
+    : a._tag === 'Times' &&
+      b._tag === 'Times' &&
+      a.startMs === b.startMs &&
+      a.endMs === b.endMs;
 
 const bumpSequence = (component: ICAL.Component): void => {
   const sequence = Number(component.getFirstPropertyValue('sequence') ?? 0);
@@ -192,7 +191,8 @@ const applyText = (
 };
 
 // Changes the event in place. Fails with the reason when pim does not make
-// the change, such as moving a recurring series.
+// the change, such as moving a recurring series. Moving an event asks its
+// attendees to reply again.
 export const applyChanges = (
   object: CalendarObject,
   changes: EventChanges,
@@ -207,17 +207,30 @@ export const applyChanges = (
     );
   }
   registerIanaZones(vcalendar);
+  const current = currentSpan(master, local);
   const span = movesTime
-    ? changedSpan(currentSpan(master, local), changes.start, changes.end)
+    ? changedSpan(current, changes.start, changes.end)
     : undefined;
   if (span !== undefined && Result.isFailure(span)) {
     return Result.fail(span.failure);
   }
+  const attendees = attendeeChanges(
+    master,
+    changes.addAttendees ?? [],
+    changes.removeAttendees ?? [],
+  );
+  if (Result.isFailure(attendees)) {
+    return Result.fail(attendees.failure);
+  }
   const changed = applyText(object, changes);
-  if (span !== undefined) {
+  if (span !== undefined && !sameSpan(span.success, current)) {
     setSpan(master, span.success);
     bumpSequence(master);
+    resetReplies(master);
     changed.add(master);
+  }
+  for (const component of changeAttendees(object, attendees.success)) {
+    changed.add(component);
   }
   for (const component of changed) {
     touch(component, nowMs);

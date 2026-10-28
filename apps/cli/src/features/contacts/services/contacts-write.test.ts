@@ -3,7 +3,7 @@ import {
   davAccount,
   davResponse,
   discoveryRoutes,
-  type FakeReply,
+  type FakeRoute,
   failsOnFakeDav,
   multistatus,
   succeedsOnFakeDav,
@@ -17,7 +17,7 @@ import {
 } from './contacts-write';
 import type { ContactChanges } from './vcard-write';
 
-type Routes = Readonly<Record<string, FakeReply>>;
+type Routes = Readonly<Record<string, FakeRoute>>;
 
 const privileges = (name: string) =>
   `<d:current-user-privilege-set><d:privilege><d:${name}/></d:privilege></d:current-user-privilege-set>`;

@@ -28,11 +28,24 @@ export const davLogin = {
   password: 'secret',
 } as const;
 
+// One reply, or replies in turn, the last of which repeats.
+export type FakeRoute = FakeReply | ReadonlyArray<FakeReply>;
+
 // A DAV server that answers "METHOD /path" from a table, with 404 for
 // anything else, and records every request. "METHOD /folder/*" answers for
 // any resource in the folder without its own route.
-export const fakeDavServer = (routes: Readonly<Record<string, FakeReply>>) => {
+export const fakeDavServer = (routes: Readonly<Record<string, FakeRoute>>) => {
   const requests: Array<RecordedRequest> = [];
+  const answered = new Map<string, number>();
+  const replyFor = (key: string): FakeReply | undefined => {
+    const route = routes[key];
+    if (route === undefined || !('length' in route)) {
+      return route;
+    }
+    const count = answered.get(key) ?? 0;
+    answered.set(key, count + 1);
+    return route[Math.min(count, route.length - 1)];
+  };
   const fetch: Fetch = (url, init) => {
     const method = init.method ?? 'GET';
     const headers = new Headers(init.headers);
@@ -46,8 +59,10 @@ export const fakeDavServer = (routes: Readonly<Record<string, FakeReply>>) => {
     });
     const { pathname } = new URL(url);
     const folder = pathname.slice(0, pathname.lastIndexOf('/') + 1);
-    const reply =
-      routes[`${method} ${pathname}`] ?? routes[`${method} ${folder}*`];
+    const exact = `${method} ${pathname}`;
+    const reply = replyFor(
+      routes[exact] === undefined ? `${method} ${folder}*` : exact,
+    );
     return Promise.resolve(
       reply === undefined
         ? new Response('no such resource', { status: notFoundCode })
@@ -69,7 +84,7 @@ export const davResponse = (href: string, props: string): string =>
 
 // Discovery for a user whose principal is /principals/me/, with calendars
 // under /calendars/me/ and address books under /addressbooks/me/.
-export const discoveryRoutes: Readonly<Record<string, FakeReply>> = {
+export const discoveryRoutes: Readonly<Record<string, FakeRoute>> = {
   'PROPFIND /': {
     body: multistatus(
       davResponse(
@@ -100,7 +115,7 @@ export const davAccount: Account = {
   dav: { url: davLogin.url, user: davLogin.user },
 };
 
-type Routes = Readonly<Record<string, FakeReply>>;
+type Routes = Readonly<Record<string, FakeRoute>>;
 
 const onFakeDav = <A, E>(routes: Routes, effect: Effect.Effect<A, E, Dav>) => {
   const { client, requests } = fakeDavServer(routes);

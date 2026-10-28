@@ -33,6 +33,9 @@ export type Attendee = {
   readonly role?: string;
   readonly partstat?: string;
   readonly rsvp?: boolean;
+  // How the server delivered the organizer's last message to the attendee,
+  // such as 1.1 for sent (RFC 6638, section 3.2.9). Servers may leave it out.
+  readonly scheduleStatus?: string;
 };
 
 export type EventChange = {
@@ -42,6 +45,8 @@ export type EventChange = {
   readonly summary?: string;
   readonly status?: string;
   readonly location?: string;
+  // Set when the occurrence has other attendees than the series.
+  readonly attendees?: ReadonlyArray<string>;
 };
 
 export type EventDetail = {
@@ -61,9 +66,9 @@ export type EventDetail = {
   readonly organizer?: { readonly email: string; readonly name?: string };
   readonly attendees: ReadonlyArray<Attendee>;
   // The RRULE, such as FREQ=WEEKLY;BYDAY=MO, with the dates it skips and the
-  // occurrences that differ from it.
+  // occurrences that differ from it. A series of RDATEs has no rule.
   readonly recurrence?: {
-    readonly rule: string;
+    readonly rule?: string;
     readonly excluded: ReadonlyArray<string>;
     readonly changed: ReadonlyArray<EventChange>;
   };
