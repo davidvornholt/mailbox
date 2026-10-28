@@ -53,3 +53,12 @@ export class SchedulingUnsupportedError extends Schema.TaggedError<SchedulingUns
     message: Schema.String,
   },
 ) {}
+
+// The message is no invitation the user can answer, as when it cancels a
+// meeting or does not invite them.
+export class InvitationError extends Schema.TaggedError<InvitationError>()(
+  'InvitationError',
+  {
+    message: Schema.String,
+  },
+) {}

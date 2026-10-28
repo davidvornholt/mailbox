@@ -63,6 +63,16 @@ export class AttachmentNotFoundError extends Schema.TaggedError<AttachmentNotFou
   },
 ) {}
 
+// The message carries no iCalendar data, so it is no invitation.
+export class NoCalendarDataError extends Schema.TaggedError<NoCalendarDataError>()(
+  'NoCalendarDataError',
+  {
+    folder: Schema.String,
+    uid: Schema.Number,
+    message: Schema.String,
+  },
+) {}
+
 export class DraftError extends Schema.TaggedError<DraftError>()('DraftError', {
   message: Schema.String,
 }) {}
@@ -88,5 +98,6 @@ export type MailError =
   | FolderNotFoundError
   | MessageNotFoundError
   | AttachmentNotFoundError
+  | NoCalendarDataError
   | DraftError
   | StaleUidError;

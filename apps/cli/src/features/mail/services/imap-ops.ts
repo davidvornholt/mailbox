@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
 import { convert } from 'html-to-text';
-import type { ImapFlow, ListResponse } from 'imapflow';
+import type { ImapFlow, ListResponse, MessageStructureObject } from 'imapflow';
 import { type AddressObject, type ParsedMail, simpleParser } from 'mailparser';
 import { ImapError, MessageNotFoundError } from '../errors/errors';
 import type { FolderInfo, FullMessage } from '../schemas/mail';
@@ -66,7 +66,7 @@ const plainText = (parsed: ParsedMail): string => {
     : text;
 };
 
-const toFullMessage = (
+export const toFullMessage = (
   parsed: ParsedMail,
   folder: string,
   uid: number,
@@ -103,12 +103,19 @@ export const listMailboxes = (
     catch: imapError('list folders'),
   });
 
-// Callers must hold the target folder's mailbox lock while using this helper.
-export const readMessageContents = (
+// The message, parsed, with its MIME structure. Callers must hold the
+// folder's mailbox lock.
+export const fetchParsedMessage = (
   client: ImapFlow,
   folder: string,
   uid: number,
-): Effect.Effect<FullMessage, ImapError | MessageNotFoundError> =>
+): Effect.Effect<
+  {
+    readonly parsed: ParsedMail;
+    readonly structure: MessageStructureObject | undefined;
+  },
+  ImapError | MessageNotFoundError
+> =>
   Effect.gen(function* () {
     const message = yield* Effect.tryPromise({
       try: () =>
@@ -137,11 +144,21 @@ export const readMessageContents = (
       try: () => simpleParser(source),
       catch: imapError('parse message'),
     });
-    return {
-      ...toFullMessage(parsed, folder, uid),
-      attachments: listAttachments(message.bodyStructure),
-    };
+    return { parsed, structure: message.bodyStructure };
   });
+
+// Callers must hold the target folder's mailbox lock while using this helper.
+export const readMessageContents = (
+  client: ImapFlow,
+  folder: string,
+  uid: number,
+): Effect.Effect<FullMessage, ImapError | MessageNotFoundError> =>
+  fetchParsedMessage(client, folder, uid).pipe(
+    Effect.map(({ parsed, structure }) => ({
+      ...toFullMessage(parsed, folder, uid),
+      attachments: listAttachments(structure),
+    })),
+  );
 
 export const readMessage = (
   client: ImapFlow,

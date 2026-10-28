@@ -4,6 +4,8 @@ import { Secrets } from '../../../shared/accounts/secrets';
 import type { MailError } from '../errors/errors';
 import type {
   AttachmentContent,
+  CalendarMessage,
+  CalendarReplyDraft,
   DraftHandle,
   DraftInput,
   DraftLocation,
@@ -17,7 +19,13 @@ import type {
 } from '../schemas/mail';
 import { searchAccounts } from './account-search';
 import { readAttachment } from './attachment';
-import { removeDraft, replaceDraft, writeDraft } from './draft';
+import { readCalendarMessage } from './calendar-part';
+import {
+  removeDraft,
+  replaceDraft,
+  writeCalendarReply,
+  writeDraft,
+} from './draft';
 import { tagDrafts } from './draft-tags';
 import {
   closeClient,
@@ -52,10 +60,10 @@ export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
   );
 };
 
-// One IMAP service instance keeps one authenticated connection per account, so
-// a command that touches an account several times (such as a reply draft that
-// reads its source first) logs in once. The scope finalizer closes them.
-const makeImap = Effect.gen(function* () {
+// One authenticated connection per account, so a command that touches an
+// account several times (such as a reply draft that reads its source first)
+// logs in once. The scope finalizer closes them.
+const makeConnections = Effect.gen(function* () {
   const config = yield* AccountConfig;
   const secrets = yield* Secrets;
   const microsoft = yield* MicrosoftAuth;
@@ -90,6 +98,17 @@ const makeImap = Effect.gen(function* () {
       );
     });
   yield* Effect.addFinalizer(() => closeAll);
+  return {
+    config,
+    clientFor,
+    searchMailbox,
+    searchMailboxWithinDeadline,
+  } as const;
+});
+
+const makeImap = Effect.gen(function* () {
+  const { config, clientFor, searchMailbox, searchMailboxWithinDeadline } =
+    yield* makeConnections;
   return {
     verify: (email: string) => clientFor(email).pipe(Effect.asVoid),
     verifyLogin: (
@@ -136,6 +155,24 @@ const makeImap = Effect.gen(function* () {
       clientFor(email).pipe(
         Effect.flatMap((client) => readAttachment(client, folder, uid, part)),
       ),
+    readCalendar: (
+      email: string,
+      folder: string,
+      uid: number,
+    ): Effect.Effect<CalendarMessage, MailError> =>
+      clientFor(email).pipe(
+        Effect.flatMap((client) =>
+          readCalendarMessage(client, email, folder, uid),
+        ),
+      ),
+    saveCalendarReply: (
+      draft: CalendarReplyDraft,
+    ): Effect.Effect<DraftLocation, MailError> =>
+      Effect.gen(function* () {
+        const account = yield* config.getAccount(draft.account);
+        const client = yield* clientFor(draft.account);
+        return yield* writeCalendarReply(client, account, draft);
+      }),
     saveDraft: (input: DraftInput): Effect.Effect<DraftLocation, MailError> =>
       Effect.gen(function* () {
         const account = yield* config.getAccount(input.account);

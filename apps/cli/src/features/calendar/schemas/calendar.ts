@@ -63,7 +63,13 @@ export type EventDetail = {
   readonly description?: string;
   readonly url?: string;
   readonly status?: string;
-  readonly organizer?: { readonly email: string; readonly name?: string };
+  readonly organizer?: {
+    readonly email: string;
+    readonly name?: string;
+    // How the server delivered the user's last answer to the organizer
+    // (RFC 6638, section 3.2.9).
+    readonly scheduleStatus?: string;
+  };
   readonly attendees: ReadonlyArray<Attendee>;
   // The RRULE, such as FREQ=WEEKLY;BYDAY=MO, with the dates it skips and the
   // occurrences that differ from it. A series of RDATEs has no rule.

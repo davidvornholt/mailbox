@@ -12,6 +12,7 @@ Run `pim mail --help` for the mail commands and `pim <command> --help` for optio
 - Pipe the body on stdin with a quoted heredoc (`<<'EOF'`).
 - To reply, use the message's account and pass its folder and uid as `--reply-folder` and `--reply-uid`. This quotes and threads the message. Set the subject yourself.
 - Keep the `account`, `folder`, `uid`, and `uidValidity` values that commands print; later commands need them. `pim mail draft update` prints a new uid.
+- A message with a `text/calendar` attachment carries calendar data, such as an invitation. Read and answer it with `pim calendar invitation` and `pim calendar respond` from the pim-calendar skill, not with a plain reply. `pim mail draft update` drops the calendar data from an answer draft; run `pim calendar respond` again instead.
 - Delete a draft only when the user asked for it.
 - A search lists accounts it could not search under `failures`.
 - If an account has no working login, ask the user to run `pim login`.

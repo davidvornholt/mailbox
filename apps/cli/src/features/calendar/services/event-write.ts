@@ -14,7 +14,7 @@ import { type CalendarObject, spanOf, text } from './event-fields';
 import { changedSpan, type EventSpan, type EventTime } from './event-times';
 import { registerIanaZones } from './ical-time';
 
-const productId = '-//pim//EN';
+export const productId = '-//pim//EN';
 
 // The text fields pim writes. An empty location or description removes it.
 export type EventText = {

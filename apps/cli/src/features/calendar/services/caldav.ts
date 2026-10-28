@@ -139,6 +139,33 @@ export const queryEvents = (
     )
     .pipe(Effect.map((resources) => resources.map(toCalendarResource)));
 
+const escapeXml = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+
+// The calendar objects with an event whose UID contains uid. Servers may
+// match text loosely, so callers compare the UID exactly.
+export const queryEventsByUid = (
+  client: DavClient,
+  calendarHref: string,
+  uid: string,
+): Effect.Effect<
+  ReadonlyArray<Result.Result<CalendarResource, CalendarDataError>>,
+  DavRequestError
+> =>
+  client
+    .report(
+      calendarHref,
+      '1',
+      xmlBody(
+        'c:calendar-query',
+        `<d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:prop-filter name="UID"><c:text-match collation="i;octet">${escapeXml(uid)}</c:text-match></c:prop-filter></c:comp-filter></c:comp-filter></c:filter>`,
+      ),
+    )
+    .pipe(Effect.map((resources) => resources.map(toCalendarResource)));
+
 export const fetchCalendarObject = (
   client: DavClient,
   href: string,

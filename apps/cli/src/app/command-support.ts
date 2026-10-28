@@ -4,6 +4,7 @@ import type {
   CalendarNotFoundError,
   EventChangeError,
   EventHasAttendeesError,
+  InvitationError,
   ReadOnlyCalendarError,
   SchedulingUnsupportedError,
 } from '../features/calendar/errors/errors';
@@ -59,6 +60,7 @@ export type CommandError =
   | EventHasAttendeesError
   | EventChangeError
   | SchedulingUnsupportedError
+  | InvitationError
   | ContactDataError
   | AddressBookNotFoundError
   | ReadOnlyAddressBookError
