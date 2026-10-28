@@ -65,6 +65,10 @@ const optionalTimeOf = (
     ? Effect.succeed(undefined)
     : timeOf(command, name, value, zone);
 
+const notifyAttendeesFlag = flag.switch(
+  'Allow a write that makes the server email the attendees. Pass it only when the user asked to tell them',
+);
+
 const nonEmpty = (
   command: string,
   name: string,
@@ -80,7 +84,7 @@ const create = defineCommand(
   {
     name: 'calendar create',
     summary: 'Create an event',
-    description: `Create an event in one calendar. pim writes no organizer, attendees, or alarms, so creating an event invites and emails no one. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href and, when the server returns one, its etag.`,
+    description: `Create an event in one calendar. Without --attendee, pim writes no organizer, attendees, or alarms, so the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href, when the server returns one its etag, and for each attendee how the server delivered the invitation.`,
     flags: {
       account: accountFlag,
       calendar: flag.text('name|href', 'Calendar from "pim calendar list"'),
@@ -92,12 +96,19 @@ const create = defineCommand(
       ),
       location: flag.optionalText('text', 'Location'),
       description: flag.optionalText('text', 'Description'),
+      attendee: flag.texts('email', 'Address to invite; repeat for more'),
+      notifyAttendees: notifyAttendeesFlag,
       timeZone: timeZoneFlag,
     },
   },
   (values): CommandEffect =>
     Effect.gen(function* () {
       const command = 'calendar create';
+      if (values.notifyAttendees && values.attendee.length === 0) {
+        return yield* new UsageError({
+          message: `pim ${command}: --notify-attendees notifies no one without --attendee`,
+        });
+      }
       const zone = yield* zoneOf(command, values.timeZone);
       const start = yield* timeOf(command, 'start', values.start, zone);
       const end = yield* optionalTimeOf(command, 'end', values.end, zone);
@@ -121,6 +132,8 @@ const create = defineCommand(
           ...(values.description === undefined
             ? {}
             : { description: values.description }),
+          attendees: values.attendee,
+          notifyAttendees: values.notifyAttendees,
         },
         DateTime.zoneMakeLocal(),
       );
@@ -135,13 +148,26 @@ const targetFlags = {
   series: flag.switch(
     'Allow the change for every occurrence of a recurring event',
   ),
+  notifyAttendees: notifyAttendeesFlag,
 } as const;
+
+const targetOf = (values: {
+  readonly href: string;
+  readonly etag: string;
+  readonly series: boolean;
+  readonly notifyAttendees: boolean;
+}) => ({
+  href: values.href,
+  etag: values.etag,
+  series: values.series,
+  notifyAttendees: values.notifyAttendees,
+});
 
 const update = defineCommand(
   {
     name: 'calendar update',
     summary: 'Change an event',
-    description: `Change the title, times, location, or description of an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim refuses events with attendees other than the organizer, because a change could email them, and does not move recurring events. Prints the changed event with its new etag, when the server returns one.`,
+    description: `Change the title, times, location, description, or attendees of an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim does not move recurring events. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one.`,
     flags: {
       ...targetFlags,
       title: flag.optionalText('text', 'New title'),
@@ -152,20 +178,27 @@ const update = defineCommand(
       ),
       location: flag.optionalText('text', 'New location'),
       description: flag.optionalText('text', 'New description'),
+      addAttendee: flag.texts('email', 'Address to invite; repeat for more'),
+      removeAttendee: flag.texts(
+        'email',
+        'Attendee to take off the event; repeat for more',
+      ),
       timeZone: timeZoneFlag,
     },
   },
   (values): CommandEffect =>
     Effect.gen(function* () {
       const command = 'calendar update';
-      const { title, location, description } = values;
+      const { title, location, description, addAttendee, removeAttendee } =
+        values;
       if (
         [title, values.start, values.end, location, description].every(
           (value) => value === undefined,
-        )
+        ) &&
+        addAttendee.length + removeAttendee.length === 0
       ) {
         return yield* new UsageError({
-          message: `pim ${command}: pass at least one of --title, --start, --end, --location, or --description`,
+          message: `pim ${command}: pass at least one of --title, --start, --end, --location, --description, --add-attendee, or --remove-attendee`,
         });
       }
       yield* nonEmpty(command, 'title', title);
@@ -176,13 +209,15 @@ const update = defineCommand(
       const account = yield* config.getAccount(values.account);
       const event = yield* updateEvent(
         account,
-        { href: values.href, etag: values.etag, series: values.series },
+        targetOf(values),
         {
           ...(title === undefined ? {} : { title }),
           ...(location === undefined ? {} : { location }),
           ...(description === undefined ? {} : { description }),
           ...(start === undefined ? {} : { start }),
           ...(end === undefined ? {} : { end }),
+          addAttendees: addAttendee,
+          removeAttendees: removeAttendee,
         },
         DateTime.zoneMakeLocal(),
       );
@@ -195,7 +230,7 @@ const remove = defineCommand(
     name: 'calendar delete',
     summary: 'Delete an event',
     description:
-      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. pim refuses events with attendees other than the organizer, because deleting one could email them. Prints the deleted event.',
+      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. Deleting a meeting makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees, only when the user organizes it, and only on a server that sends cancellations itself. Prints the deleted event.',
     flags: targetFlags,
   },
   (values): CommandEffect =>
@@ -204,7 +239,7 @@ const remove = defineCommand(
       const account = yield* config.getAccount(values.account);
       const deleted = yield* deleteEvent(
         account,
-        { href: values.href, etag: values.etag, series: values.series },
+        targetOf(values),
         DateTime.zoneMakeLocal(),
       );
       return json({ deleted });

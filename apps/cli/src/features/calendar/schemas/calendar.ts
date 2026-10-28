@@ -33,6 +33,9 @@ export type Attendee = {
   readonly role?: string;
   readonly partstat?: string;
   readonly rsvp?: boolean;
+  // How the server delivered the organizer's last message to the attendee,
+  // such as 1.2 for delivered (RFC 6638, section 3.2.9).
+  readonly scheduleStatus?: string;
 };
 
 export type EventChange = {

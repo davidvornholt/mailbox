@@ -9,6 +9,7 @@ import {
   EventChangeError,
   EventHasAttendeesError,
   ReadOnlyCalendarError,
+  type SchedulingUnsupportedError,
 } from '../errors/errors';
 import type { EventDetail } from '../schemas/calendar';
 import {
@@ -20,6 +21,7 @@ import {
   replaceCalendarObject,
 } from './caldav';
 import { type CalendarError, findCalendar, readEvent } from './calendar';
+import { newAttendees, type Organizer, setOrganizer } from './event-attendees';
 import {
   type CalendarObject,
   eventDetail,
@@ -30,10 +32,11 @@ import {
   applyChanges,
   type EventChanges,
   type EventText,
+  type Invitation,
   isRecurring,
   newEventIcs,
-  otherAttendees,
 } from './event-write';
+import { meetingOrganizer, writeOrganizer } from './scheduling';
 
 export type CalendarWriteError =
   | CalendarError
@@ -41,7 +44,8 @@ export type CalendarWriteError =
   | CalendarNotFoundError
   | ReadOnlyCalendarError
   | EventHasAttendeesError
-  | EventChangeError;
+  | EventChangeError
+  | SchedulingUnsupportedError;
 
 type StoredEvent = {
   readonly account: string;
@@ -60,12 +64,66 @@ const detailOf = (
     ),
   );
 
+// The event as the server stored it after a write that notified attendees.
+// The server notes how it delivered each message (RFC 6638, section 3.2.9)
+// and, as it changed the data, may give the new etag only on a read. The
+// write already happened, so a failed read falls back to the event pim
+// wrote.
+const storedDetail = (
+  client: DavClient,
+  written: EventDetail,
+  local: DateTime.TimeZone,
+): Effect.Effect<EventDetail> =>
+  fetchCalendarObject(client, written.href).pipe(
+    Effect.flatMap(({ etag, ics }) =>
+      detailOf(
+        { account: written.account, href: written.href, etag, ics },
+        local,
+      ),
+    ),
+    Effect.orElseSucceed(() => written),
+  );
+
 export type NewEventRequest = EventText & {
   // A calendar name or href from "pim calendar list".
   readonly calendar: string;
   readonly title: string;
   readonly span: EventSpan;
+  // Addresses to invite. The server emails each of them an invitation, so
+  // pim invites them only with notifyAttendees.
+  readonly attendees: ReadonlyArray<string>;
+  readonly notifyAttendees: boolean;
 };
+
+// The invitation of a new event in the calendar at href, or none when the
+// event has no attendees.
+const invitationOf = (
+  client: DavClient,
+  account: Account,
+  href: string,
+  { attendees, notifyAttendees }: NewEventRequest,
+): Effect.Effect<Invitation | undefined, CalendarWriteError> =>
+  Effect.gen(function* () {
+    if (attendees.length === 0) {
+      return;
+    }
+    if (!notifyAttendees) {
+      return yield* new EventHasAttendeesError({
+        href,
+        message: `Creating an event with attendees makes the server email each of them an invitation. Pass --notify-attendees only if the user asked to invite ${attendees.join(', ')}`,
+      });
+    }
+    const { organizer, addresses } = yield* meetingOrganizer(
+      client,
+      account,
+      href,
+    );
+    const invited = newAttendees(attendees, new Set(addresses));
+    if (Result.isFailure(invited)) {
+      return yield* new EventChangeError({ href, message: invited.failure });
+    }
+    return { organizer, attendees: invited.success };
+  });
 
 export const createEvent = (
   account: Account,
@@ -76,7 +134,12 @@ export const createEvent = (
     const dav = yield* Dav;
     const client = yield* dav.client(account);
     const calendars = yield* listCalendars(client);
-    const { calendar: wanted, ...event } = request;
+    const {
+      calendar: wanted,
+      attendees: _attendees,
+      notifyAttendees: _notifyAttendees,
+      ...event
+    } = request;
     const calendar = yield* findCalendar(account.email, calendars, wanted);
     if (calendar.writable === false) {
       return yield* new ReadOnlyCalendarError({
@@ -84,14 +147,30 @@ export const createEvent = (
         message: `${account.email} may only read the calendar "${calendar.name}"; choose one with "writable": true from "pim calendar list"`,
       });
     }
+    const invitation = yield* invitationOf(
+      client,
+      account,
+      calendar.href,
+      request,
+    );
     const uid = crypto.randomUUID();
     const folder = calendar.href.endsWith('/')
       ? calendar.href
       : `${calendar.href}/`;
     const href = `${folder}${uid}.ics`;
-    const ics = newEventIcs({ ...event, uid }, yield* Clock.currentTimeMillis);
-    const etag = yield* createCalendarObject(client, href, ics);
-    return yield* detailOf({ account: account.email, href, etag, ics }, local);
+    const ics = newEventIcs(
+      { ...event, uid, ...(invitation === undefined ? {} : { invitation }) },
+      yield* Clock.currentTimeMillis,
+    );
+    const detail = (etag: string | undefined) =>
+      detailOf({ account: account.email, href, etag, ics }, local);
+    yield* detail(undefined);
+    const written = yield* detail(
+      yield* createCalendarObject(client, href, ics),
+    );
+    return invitation === undefined
+      ? written
+      : yield* storedDetail(client, written, local);
   });
 
 export type EventTarget = {
@@ -100,15 +179,24 @@ export type EventTarget = {
   readonly etag: string;
   // Allows a change to every occurrence of a recurring event.
   readonly series: boolean;
+  // Allows a change that makes the server email the attendees.
+  readonly notifyAttendees: boolean;
 };
 
 // The event at the target's href, provided it is still the version the
-// caller read and changing it emails no one.
+// caller read and pim may make the write, with the organizer the server
+// emails the attendees as when the write makes it email them.
 const changeableEvent = (
   client: DavClient,
+  account: Account,
   target: EventTarget,
+  invites: boolean,
 ): Effect.Effect<
-  { readonly resource: CalendarResource; readonly object: CalendarObject },
+  {
+    readonly resource: CalendarResource;
+    readonly object: CalendarObject;
+    readonly organizer: Organizer | undefined;
+  },
   CalendarWriteError
 > =>
   Effect.gen(function* () {
@@ -127,20 +215,19 @@ const changeableEvent = (
       });
     }
     const object = yield* parseCalendar(href, resource.ics);
-    const attendees = otherAttendees(object.vcalendar);
-    if (attendees.length > 0) {
-      return yield* new EventHasAttendeesError({
-        href,
-        message: `${href} is a meeting with ${attendees.join(', ')}. Changing or deleting it could email them, so pim leaves it alone; the user can change it in a calendar app`,
-      });
-    }
     if (isRecurring(object) && !target.series) {
       return yield* new EventChangeError({
         href,
         message: `${href} is a recurring event, so this would affect every occurrence. Pass --series if that is intended`,
       });
     }
-    return { resource, object };
+    const organizer = yield* writeOrganizer(client, account, {
+      href,
+      object,
+      invites,
+      notifyAttendees: target.notifyAttendees,
+    });
+    return { resource, object, organizer };
   });
 
 export const updateEvent = (
@@ -153,7 +240,18 @@ export const updateEvent = (
     const { href, etag } = target;
     const dav = yield* Dav;
     const client = yield* dav.client(account);
-    const { object } = yield* changeableEvent(client, target);
+    const invites = (changes.addAttendees ?? []).length > 0;
+    const { object, organizer } = yield* changeableEvent(
+      client,
+      account,
+      target,
+      invites,
+    );
+    for (const event of [object.master, ...object.overrides]) {
+      if (organizer !== undefined && !event.hasProperty('organizer')) {
+        setOrganizer(event, organizer);
+      }
+    }
     const now = yield* Clock.currentTimeMillis;
     const applied = yield* readEvent(href, () =>
       applyChanges(object, changes, local, now),
@@ -162,13 +260,19 @@ export const updateEvent = (
       return yield* new EventChangeError({ href, message: applied.failure });
     }
     const ics = object.vcalendar.toString();
-    const newEtag = yield* replaceCalendarObject(client, href, ics, etag);
-    return yield* detailOf(
-      { account: account.email, href, etag: newEtag, ics },
-      local,
+    const detail = (newEtag: string | undefined) =>
+      detailOf({ account: account.email, href, etag: newEtag, ics }, local);
+    yield* detail(undefined);
+    const written = yield* detail(
+      yield* replaceCalendarObject(client, href, ics, etag),
     );
+    return organizer === undefined
+      ? written
+      : yield* storedDetail(client, written, local);
   });
 
+// Deleting a meeting the user organizes makes the server email the
+// attendees a cancellation.
 export const deleteEvent = (
   account: Account,
   target: EventTarget,
@@ -177,7 +281,12 @@ export const deleteEvent = (
   Effect.gen(function* () {
     const dav = yield* Dav;
     const client = yield* dav.client(account);
-    const { resource } = yield* changeableEvent(client, target);
+    const { resource, organizer } = yield* changeableEvent(
+      client,
+      account,
+      target,
+      false,
+    );
     const detail = yield* detailOf(
       {
         account: account.email,
@@ -187,6 +296,11 @@ export const deleteEvent = (
       },
       local,
     );
-    yield* deleteCalendarObject(client, target.href, target.etag);
+    yield* deleteCalendarObject(
+      client,
+      target.href,
+      target.etag,
+      organizer !== undefined,
+    );
     return detail;
   });

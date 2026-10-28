@@ -110,6 +110,7 @@ const attendeesOf = (component: ICAL.Component): ReadonlyArray<Attendee> =>
         ? undefined
         : parameter(property, 'rsvp')?.toUpperCase() === 'TRUE',
     ),
+    ...optional('scheduleStatus', parameter(property, 'schedule-status')),
   }));
 
 const lastDay = (start: ICAL.Time, end: ICAL.Time): ICAL.Time => {

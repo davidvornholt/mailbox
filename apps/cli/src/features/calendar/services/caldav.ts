@@ -172,11 +172,34 @@ export const replaceCalendarObject = (
     etag,
   );
 
-// Schedule-Reply: F asks a scheduling server not to tell the organizer when
-// an attendee deletes an invitation (RFC 6638, section 8.1).
+// Whether the server sends the invitations, updates, and cancellations for
+// changes to the resource itself (RFC 6638, section 2).
+export const schedulesFor = (
+  client: DavClient,
+  href: string,
+): Effect.Effect<boolean, DavRequestError> =>
+  client
+    .send({ method: 'OPTIONS', href })
+    .pipe(
+      Effect.map((reply) =>
+        (reply.headers.get('dav') ?? '')
+          .split(',')
+          .some((feature) => feature.trim() === 'calendar-auto-schedule'),
+      ),
+    );
+
+// Without notifyAttendees, Schedule-Reply: F asks a scheduling server not
+// to tell the organizer when an attendee deletes an invitation (RFC 6638,
+// section 8.1).
 export const deleteCalendarObject = (
   client: DavClient,
   href: string,
   etag: string,
+  notifyAttendees: boolean,
 ): Effect.Effect<void, DavRequestError> =>
-  deleteResource(client, href, etag, { 'schedule-reply': 'F' });
+  deleteResource(
+    client,
+    href,
+    etag,
+    notifyAttendees ? {} : { 'schedule-reply': 'F' },
+  );
