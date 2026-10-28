@@ -21,7 +21,12 @@ import {
   replaceCalendarObject,
 } from './caldav';
 import { type CalendarError, findCalendar, readEvent } from './calendar';
-import { newAttendees, type Organizer, setOrganizer } from './event-attendees';
+import {
+  clearForcedSends,
+  newAttendees,
+  type Organizer,
+  setOrganizer,
+} from './event-attendees';
 import {
   type CalendarObject,
   eventDetail,
@@ -295,6 +300,7 @@ export const updateEvent = (
       if (organizer !== undefined && !event.hasProperty('organizer')) {
         setOrganizer(event, organizer);
       }
+      clearForcedSends(event);
     }
     const now = yield* Clock.currentTimeMillis;
     const applied = yield* readEvent(href, () =>

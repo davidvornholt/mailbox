@@ -182,6 +182,18 @@ export const changeAttendees = (
   return changed;
 };
 
+// sabre/dav can leave SCHEDULE-FORCE-SEND stored in a changed occurrence
+// (RFC 6638, section 7.2), and writing it back makes the server send that
+// message again.
+export const clearForcedSends = (component: ICAL.Component): void => {
+  for (const property of [
+    ...component.getAllProperties('organizer'),
+    ...component.getAllProperties('attendee'),
+  ]) {
+    property.removeParameter('schedule-force-send');
+  }
+};
+
 // Asks the attendees to reply again, as after the organizer moved the event.
 export const resetReplies = (component: ICAL.Component): void => {
   const organizer = organizerAddress(component);
