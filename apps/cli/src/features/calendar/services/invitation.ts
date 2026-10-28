@@ -67,7 +67,7 @@ const attendeeProperty = (
     .find((property) => addressOf(property) === attendee);
 
 // The user's addresses that the object lists as attendees, in order.
-const ownAttendees = (
+export const ownAttendees = (
   object: CalendarObject,
   addresses: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
@@ -134,25 +134,45 @@ const excludedOccurrences = (object: CalendarObject): Set<string> =>
       .flatMap((property) => property.getValues().map(String)),
   );
 
-const changedOccurrences = ({ overrides }: CalendarObject): Set<string> =>
+// The occurrences a scheduling server answers for the attendee: the series
+// and each changed occurrence that lists them, unless their SCHEDULE-AGENT
+// leaves that to a calendar app. sabre/dav names an occurrence by its raw
+// RECURRENCE-ID.
+const answeredOccurrences = (
+  object: CalendarObject,
+  attendee: string,
+): Set<string> =>
   new Set(
-    overrides.map((event) =>
-      String(event.getFirstPropertyValue('recurrence-id')),
-    ),
+    eventsOf(object)
+      .filter((event) => {
+        const property = attendeeProperty(event, attendee);
+        return (
+          property !== undefined &&
+          String(property.getParameter('schedule-agent')).toUpperCase() !==
+            'CLIENT'
+        );
+      })
+      .map((event) =>
+        event.hasProperty('recurrence-id')
+          ? String(event.getFirstPropertyValue('recurrence-id'))
+          : 'master',
+      ),
   );
 
 // Whether the next version of an event drops occurrences the stored one
-// holds: one it newly excludes, or a changed one it no longer has. A server
-// that schedules answers for those too when the attendee writes the change.
+// answers for the attendee: one it newly excludes, or one that no longer
+// asks them. A server that schedules answers for those too when the
+// attendee writes the change, declining or with an empty answer.
 export const dropsOccurrences = (
   stored: CalendarObject,
   next: CalendarObject,
+  attendee: string,
 ): boolean => {
   const excluded = excludedOccurrences(stored);
-  const changed = changedOccurrences(next);
+  const answered = answeredOccurrences(next, attendee);
   return (
     [...excludedOccurrences(next)].some((time) => !excluded.has(time)) ||
-    [...changedOccurrences(stored)].some((id) => !changed.has(id))
+    [...answeredOccurrences(stored, attendee)].some((id) => !answered.has(id))
   );
 };
 

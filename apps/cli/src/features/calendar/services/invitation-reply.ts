@@ -33,6 +33,7 @@ import {
   givesAnswer,
   type InvitationReply,
   invitationReply,
+  ownAttendees,
   type Parties,
   type Partstat,
   partiesOf,
@@ -163,6 +164,8 @@ const storeCopy = (
 type ServerAnswer = {
   readonly invitation: ReceivedInvitation;
   readonly parties: Parties;
+  // The user's addresses the server knows.
+  readonly addresses: ReadonlyArray<string>;
   readonly calendar: Calendar;
   readonly copy: EventCopy | undefined;
   readonly partstat: Partstat;
@@ -175,10 +178,12 @@ const forceFor = (
   {
     invitation,
     attendee,
+    addresses,
     partstat,
   }: {
     readonly invitation: ReceivedInvitation;
     readonly attendee: string;
+    readonly addresses: ReadonlyArray<string>;
     readonly partstat: Partstat;
   },
   href: string,
@@ -194,8 +199,15 @@ const forceFor = (
       `${href} does not list ${attendee} as an attendee, so pim cannot answer the meeting there`,
     );
   }
+  // The server answers for whichever of the user's addresses it finds first.
+  const own = ownAttendees(content, addresses);
+  if (own.length > 1) {
+    return refuse(
+      `${href} lists ${own.join(' and ')} as attendees, so pim cannot answer for one of them alone. Answer it in a calendar app`,
+    );
+  }
   const replaces = content !== stored;
-  if (replaces && dropsOccurrences(stored, content)) {
+  if (replaces && dropsOccurrences(stored, content, attendee)) {
     return refuse(
       `${invitation.source} drops occurrences of the meeting that ${href} holds, and the server would send answers for those as well. Answer it in a calendar app`,
     );
@@ -229,7 +241,7 @@ const forceFor = (
 const answerOnServer = (
   client: DavClient,
   account: Account,
-  { invitation, parties, calendar, copy, partstat }: ServerAnswer,
+  { invitation, parties, addresses, calendar, copy, partstat }: ServerAnswer,
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail, CalendarWriteError | InvitationError> =>
   Effect.gen(function* () {
@@ -259,10 +271,11 @@ const answerOnServer = (
       invitation.sequence > sequenceOf(stored.object.master)
         ? yield* parseCalendar(href, unansweredCopy(invitation, attendee))
         : stored.object;
-    const force = yield* forceFor({ invitation, attendee, partstat }, href, {
-      stored: stored.object,
-      content,
-    });
+    const force = yield* forceFor(
+      { invitation, attendee, addresses, partstat },
+      href,
+      { stored: stored.object, content },
+    );
     giveAnswer(content, attendee, { partstat, force });
     const ics = content.vcalendar.toString();
     const detail = (newEtag: string | undefined) =>
@@ -326,7 +339,7 @@ export const answerInvitation = (
     const event = yield* answerOnServer(
       client,
       account,
-      { invitation, parties, calendar, copy, partstat },
+      { invitation, parties, addresses, calendar, copy, partstat },
       local,
     );
     return { _tag: 'Answered', event };

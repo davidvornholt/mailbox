@@ -2,51 +2,24 @@ import { describe, expect, it } from 'bun:test';
 import {
   davAccount,
   davResponse,
-  failsOnFakeDav,
   multistatus,
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
-import {
-  calendarRoutes,
-  noScheduling,
-  type Routes,
-  schedules,
-  unfolded,
-} from './calendar-write.fixture';
-import { berlin, icsOf, vevent } from './ical.fixture';
-import { type ReceivedInvitation, unansweredCopy } from './invitation';
+import { noScheduling, unfolded } from './calendar-write.fixture';
+import { berlin } from './ical.fixture';
+import { unansweredCopy } from './invitation';
 import { invitationIcs, received, review } from './invitation.fixture';
 import { describeInvitation } from './invitation-copies';
-import { answerInvitation, type InvitationAnswer } from './invitation-reply';
-
-const copyHref = '/calendars/me/work/copy.ics';
-const newResource = /\/calendars\/me\/work\/[\w-]+\.ics$/u;
-
-// The meeting as the user's calendar stores it, with their answer.
-const storedCopy = (partstat: string, ...extra: ReadonlyArray<string>) =>
-  icsOf(...review('SEQUENCE:0'), ...extra).replace(
-    'PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me',
-    `PARTSTAT=${partstat};RSVP=TRUE;CN=Me`,
-  );
-
-const copies = (...stored: ReadonlyArray<readonly [string, string]>) => ({
-  body: multistatus(
-    ...stored.map(([at, ics]) =>
-      davResponse(
-        at,
-        `<d:getetag>"c1"</d:getetag><c:calendar-data>${ics}</c:calendar-data>`,
-      ),
-    ),
-  ),
-});
-
-const routesWith = (report: Routes[string], more: Routes = {}): Routes => ({
-  ...calendarRoutes,
-  'OPTIONS /calendars/me/work/': schedules,
-  'REPORT /calendars/me/work/': report,
-  ...more,
-});
+import { answerInvitation } from './invitation-reply';
+import {
+  accept,
+  copies,
+  copyHref,
+  newResource,
+  routesWith,
+  storedCopy,
+} from './invitation-reply.fixture';
 
 const answered = (accepted: string) => ({
   status: 200,
@@ -56,8 +29,6 @@ const answered = (accepted: string) => ({
     'ORGANIZER;CN=Boss;SCHEDULE-STATUS=1.2',
   ),
 });
-
-const accept = { partstat: 'accepted', notifyOrganizer: true } as const;
 
 describe('answerInvitation through the calendar server', () => {
   it('adds the meeting unanswered and then answers it, so the server sends one reply', async () => {
@@ -150,142 +121,6 @@ describe('answerInvitation through the calendar server', () => {
       `DTSTART;TZID=W. Europe Standard Time:${invitation.sequence === 0 ? '20261104T100000' : '20261104T090000'}`,
     );
   });
-});
-
-// An invitation for one occurrence of a recurring meeting.
-const occurrence = invitationIcs(
-  ...vevent(
-    'ORGANIZER;CN=Boss:mailto:boss@example.com',
-    'ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Me:mailto:me@example.com',
-    'UID:review@example.com',
-    'RECURRENCE-ID;TZID=W. Europe Standard Time:20261111T100000',
-    'SUMMARY:Review',
-    'DTSTART;TZID=W. Europe Standard Time:20261111T120000',
-    'DTEND;TZID=W. Europe Standard Time:20261111T130000',
-    'DTSTAMP:20261028T080000Z',
-    'SEQUENCE:1',
-  ),
-);
-
-const weekly = 'RRULE:FREQ=WEEKLY;COUNT=3';
-
-// An occurrence of the stored meeting that differs from the series.
-const changed = vevent(
-  'UID:review@example.com',
-  'RECURRENCE-ID:20261111T090000Z',
-  'DTSTART:20261111T100000Z',
-  'ORGANIZER:mailto:boss@example.com',
-  'ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com',
-);
-
-type Refusal = {
-  readonly report: Routes[string];
-  readonly answer?: InvitationAnswer;
-  readonly invitation?: ReceivedInvitation;
-  readonly tag: string;
-};
-
-describe('answerInvitation refusals', () => {
-  it.each<readonly [string, Refusal]>([
-    [
-      'without --notify-organizer',
-      {
-        report: copies(),
-        answer: { ...accept, notifyOrganizer: false },
-        tag: 'EventHasAttendeesError',
-      },
-    ],
-    [
-      'an answer for one occurrence',
-      {
-        report: copies([copyHref, storedCopy('NEEDS-ACTION')]),
-        invitation: received(occurrence),
-        tag: 'InvitationError',
-      },
-    ],
-    [
-      'to answer a meeting with the same UID from another organizer',
-      {
-        report: copies([copyHref, storedCopy('NEEDS-ACTION')]),
-        invitation: received(
-          invitationIcs(...review()).replace(
-            'boss@example.com',
-            'other@example.com',
-          ),
-        ),
-        tag: 'InvitationError',
-      },
-    ],
-    [
-      'when the meeting is in two calendars',
-      {
-        report: copies(
-          [copyHref, storedCopy('NEEDS-ACTION')],
-          ['/calendars/me/work/again.ics', storedCopy('NEEDS-ACTION')],
-        ),
-        tag: 'InvitationError',
-      },
-    ],
-    [
-      'to resend an answer for a meeting with changed occurrences',
-      {
-        report: copies([copyHref, storedCopy('ACCEPTED', ...changed)]),
-        tag: 'InvitationError',
-      },
-    ],
-    [
-      'to send an answer again that the server reports sent',
-      {
-        report: copies([
-          copyHref,
-          storedCopy('ACCEPTED').replace(
-            'ORGANIZER;CN=Boss',
-            'ORGANIZER;CN=Boss;SCHEDULE-STATUS=1.1',
-          ),
-        ]),
-        tag: 'InvitationError',
-      },
-    ],
-    [
-      'to store an update that excludes an occurrence',
-      {
-        report: copies([copyHref, storedCopy('ACCEPTED', weekly)]),
-        invitation: received(
-          invitationIcs(
-            ...review(
-              'SEQUENCE:1',
-              weekly,
-              'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
-            ),
-          ),
-        ),
-        tag: 'InvitationError',
-      },
-    ],
-    [
-      'to store an update without a changed occurrence',
-      {
-        report: copies([copyHref, storedCopy('ACCEPTED', ...changed)]),
-        invitation: received(invitationIcs(...review('SEQUENCE:1'))),
-        tag: 'InvitationError',
-      },
-    ],
-  ])(
-    'refuses %s without writing',
-    async (_name, {
-      report,
-      answer = accept,
-      invitation = received(),
-      tag,
-    }) => {
-      const { error, requests } = await failsOnFakeDav(
-        routesWith(report),
-        answerInvitation(davAccount, invitation, answer, berlin),
-      );
-      expect(error).toMatchObject({ _tag: tag });
-      expect(writeRequests(requests)).toEqual([]);
-    },
-  );
 });
 
 describe('answerInvitation by email', () => {
