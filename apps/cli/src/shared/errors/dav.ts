@@ -31,8 +31,22 @@ export class DavNotFoundError extends Schema.TaggedError<DavNotFoundError>()(
   },
 ) {}
 
+// The resource changed since it was read, so a change based on that version
+// was refused.
+export class DavConflictError extends Schema.TaggedError<DavConflictError>()(
+  'DavConflictError',
+  {
+    href: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
 export class DavError extends Schema.TaggedError<DavError>()('DavError', {
   message: Schema.String,
 }) {}
 
-export type DavRequestError = DavAuthError | DavNotFoundError | DavError;
+export type DavRequestError =
+  | DavAuthError
+  | DavNotFoundError
+  | DavConflictError
+  | DavError;

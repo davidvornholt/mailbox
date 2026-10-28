@@ -87,7 +87,7 @@ type EventSearch = {
 // ical.js decodes a value only when it is read, so a malformed field, such as
 // an invalid DURATION, throws here rather than in parseCalendar. So does an
 // event pim can't expand completely.
-const readEvent = <A>(
+export const readEvent = <A>(
   href: string,
   read: () => A,
 ): Effect.Effect<A, CalendarDataError> =>

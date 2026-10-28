@@ -10,6 +10,7 @@ import { checkDavAccounts } from '../shared/dav/status';
 import { stdinIsTerminal } from '../shared/terminal';
 import { checkOut, writeAttachment } from './attachment-file';
 import { calendarCommands } from './calendar-commands';
+import { calendarWriteCommands } from './calendar-write-commands';
 import { loginAccounts, loginSteps } from './cli-login';
 import {
   type CommandEffect,
@@ -255,7 +256,7 @@ const attachment = defineCommand(
 export const program: Program<CommandEffect> = {
   name: 'pim',
   summary:
-    'pim: search, read, and draft email, and read calendars and contacts. It never sends mail.',
+    'pim: search, read, and draft email, read and change calendar events, and read contacts. It never sends mail.',
   footer: [
     'Run "pim <command> --help" for its options. Write --option=value when a value starts with "--".',
     'Commands print JSON on stdout. Errors print {"error": {"tag", "message"}} on stderr and exit 1, or 2 for invalid arguments.',
@@ -271,6 +272,7 @@ export const program: Program<CommandEffect> = {
     attachment,
     ...draftCommands,
     ...calendarCommands,
+    ...calendarWriteCommands,
     ...contactCommands,
   ],
 };

@@ -57,7 +57,10 @@ export const parseCalendar = (
     }),
   );
 
-const text = (component: ICAL.Component, name: string): string | undefined => {
+export const text = (
+  component: ICAL.Component,
+  name: string,
+): string | undefined => {
   const value = component.getFirstPropertyValue(name);
   const trimmed = typeof value === 'string' ? value.trim() : '';
   return trimmed === '' ? undefined : trimmed;
@@ -167,7 +170,7 @@ export const eventSummary = (
   };
 };
 
-const spanOf = (event: ICAL.Event, local: DateTime.TimeZone): Span => {
+export const spanOf = (event: ICAL.Event, local: DateTime.TimeZone): Span => {
   const { startDate: start, endDate: end } = event;
   const startMs = instantOf(start, tzidOf(event.component, 'dtstart'), local);
   return {
