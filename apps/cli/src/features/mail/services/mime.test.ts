@@ -3,7 +3,7 @@ import { Effect } from 'effect';
 import { simpleParser } from 'mailparser';
 import type { Account } from '../../../shared/accounts/account';
 import type { DraftInput, FullMessage } from '../schemas/mail';
-import { buildMime } from './mime';
+import { buildCalendarReply, buildMime } from './mime';
 
 const account: Account = {
   email: 'sender@example.com',
@@ -121,5 +121,39 @@ describe('buildMime', () => {
       '<first@example.com>',
       '<current@example.com>',
     ]);
+  });
+});
+
+describe('buildCalendarReply', () => {
+  it('carries the answer where calendar apps read it, in the invitation thread', async () => {
+    const ics = 'BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR\r\n';
+    const raw = await Effect.runPromise(
+      buildCalendarReply(account, {
+        account: account.email,
+        to: 'boss@example.com',
+        subject: 'Accepted: Review',
+        text: 'Example Sender has accepted this invitation.\n',
+        ics,
+        repliedTo: {
+          messageId: '<invite@example.com>',
+          inReplyTo: '',
+          references: [],
+        },
+      }),
+    );
+    const parsed = await simpleParser(raw);
+    const [calendar] = parsed.attachments.filter(
+      ({ contentType }) => contentType === 'text/calendar',
+    );
+
+    expect(raw.toString()).toContain(
+      'Content-Type: text/calendar; charset=utf-8; method=REPLY',
+    );
+    expect(calendar?.content.toString()).toBe(ics);
+    expect(parsed.text?.trim()).toBe(
+      'Example Sender has accepted this invitation.',
+    );
+    expect(parsed.inReplyTo).toBe('<invite@example.com>');
+    expect(parsed.references).toBe('<invite@example.com>');
   });
 });

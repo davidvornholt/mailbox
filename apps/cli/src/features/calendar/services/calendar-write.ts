@@ -11,7 +11,7 @@ import {
   ReadOnlyCalendarError,
   type SchedulingUnsupportedError,
 } from '../errors/errors';
-import type { EventDetail } from '../schemas/calendar';
+import type { Calendar, EventDetail } from '../schemas/calendar';
 import {
   type CalendarResource,
   createCalendarObject,
@@ -47,14 +47,14 @@ export type CalendarWriteError =
   | EventChangeError
   | SchedulingUnsupportedError;
 
-type StoredEvent = {
+export type StoredEvent = {
   readonly account: string;
   readonly href: string;
   readonly etag: string | undefined;
   readonly ics: string;
 };
 
-const detailOf = (
+export const detailOf = (
   { ics, ...context }: StoredEvent,
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail, CalendarDataError> =>
@@ -66,11 +66,17 @@ const detailOf = (
 
 // A status the server noted for an earlier message would read as the
 // outcome of this write.
+const withoutStatus = <T extends { readonly scheduleStatus?: string }>({
+  scheduleStatus: _earlier,
+  ...rest
+}: T): Omit<T, 'scheduleStatus'> => rest;
+
 const withoutDelivery = (detail: EventDetail): EventDetail => ({
   ...detail,
-  attendees: detail.attendees.map(
-    ({ scheduleStatus: _earlier, ...attendee }) => attendee,
-  ),
+  ...(detail.organizer === undefined
+    ? {}
+    : { organizer: withoutStatus(detail.organizer) }),
+  attendees: detail.attendees.map(withoutStatus),
 });
 
 // The event as the server stored it after a write that notified attendees.
@@ -78,7 +84,7 @@ const withoutDelivery = (detail: EventDetail): EventDetail => ({
 // and, as it changed the data, may give the new etag only on a read. The
 // write already happened, so a failed read falls back to the event pim
 // wrote.
-const storedDetail = (
+export const storedDetail = (
   client: DavClient,
   written: EventDetail,
   local: DateTime.TimeZone,
@@ -91,6 +97,23 @@ const storedDetail = (
       ),
     ),
     Effect.orElseSucceed(() => withoutDelivery(written)),
+  );
+
+// The calendar named wanted, provided the user may write to it.
+export const writableCalendar = (
+  account: string,
+  calendars: ReadonlyArray<Calendar>,
+  wanted: string,
+): Effect.Effect<Calendar, CalendarNotFoundError | ReadOnlyCalendarError> =>
+  findCalendar(account, calendars, wanted).pipe(
+    Effect.filterOrFail(
+      (calendar) => calendar.writable !== false,
+      (calendar) =>
+        new ReadOnlyCalendarError({
+          calendar: calendar.href,
+          message: `${account} may only read the calendar "${calendar.name}"; choose one with "writable": true from "pim calendar list"`,
+        }),
+    ),
   );
 
 export type NewEventRequest = EventText & {
@@ -149,13 +172,7 @@ export const createEvent = (
       notifyAttendees: _notifyAttendees,
       ...event
     } = request;
-    const calendar = yield* findCalendar(account.email, calendars, wanted);
-    if (calendar.writable === false) {
-      return yield* new ReadOnlyCalendarError({
-        calendar: calendar.href,
-        message: `${account.email} may only read the calendar "${calendar.name}"; choose one with "writable": true from "pim calendar list"`,
-      });
-    }
+    const calendar = yield* writableCalendar(account.email, calendars, wanted);
     const invitation = yield* invitationOf(
       client,
       account,

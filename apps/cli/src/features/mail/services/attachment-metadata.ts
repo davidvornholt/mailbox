@@ -21,9 +21,12 @@ const toAttachment = (
   const isMessageBody = ['text/plain', 'text/html', 'text/x-amp-html'].includes(
     node.type.toLowerCase(),
   );
+  // An invitation's text/calendar part sits beside the message text, often
+  // without a file name (RFC 6047, section 2.4).
   const isAttachment =
     disposition === 'attachment' ||
     filename !== null ||
+    node.type.toLowerCase() === 'text/calendar' ||
     (node.id !== undefined && !isMessageBody);
   if (part === undefined || !isAttachment) {
     return;

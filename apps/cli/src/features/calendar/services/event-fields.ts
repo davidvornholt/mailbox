@@ -95,6 +95,7 @@ const organizerOf = (component: ICAL.Component) => {
     : {
         email: address(property),
         ...optional('name', parameter(property, 'cn')),
+        ...optional('scheduleStatus', parameter(property, 'schedule-status')),
       };
 };
 

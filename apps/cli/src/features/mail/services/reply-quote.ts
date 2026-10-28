@@ -1,4 +1,4 @@
-import type { FullMessage } from '../schemas/mail';
+import type { FullMessage, MessageThread } from '../schemas/mail';
 import { safeAttributionText } from './attribution-safety';
 import { escapeHtml } from './text-to-html';
 
@@ -51,7 +51,9 @@ const quotePlainText = (text: string): string =>
 const quoteHtmlText = (text: string): string =>
   escapeHtml(text.trimEnd()).replaceAll('\n', '<br>');
 
-const threadReferences = (message: FullMessage): ReadonlyArray<string> => {
+export const threadReferences = (
+  message: MessageThread,
+): ReadonlyArray<string> => {
   const ancestry =
     message.references.length > 0
       ? message.references

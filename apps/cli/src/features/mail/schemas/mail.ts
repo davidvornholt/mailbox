@@ -68,6 +68,23 @@ export type FullMessage = {
   readonly attachments: ReadonlyArray<MessageAttachment>;
 };
 
+export type MessageThread = Pick<
+  FullMessage,
+  'messageId' | 'inReplyTo' | 'references'
+>;
+
+// The iCalendar data a message carries, as an invitation does (RFC 6047).
+export type CalendarMessage = MessageThread & {
+  readonly account: string;
+  readonly folder: string;
+  readonly uid: number;
+  readonly from: string;
+  readonly subject: string;
+  // The iTIP method of its text/calendar part, such as REQUEST.
+  readonly method?: string;
+  readonly ics: string;
+};
+
 export type MessageAttachment = {
   readonly part: string;
   readonly filename: string | null;
@@ -106,6 +123,18 @@ export type DraftLocation = {
   // UIDVALIDITY of the folder when the uid was minted, serialized (it is a
   // bigint). Null when the server lacks UIDPLUS.
   readonly uidValidity: string | null;
+};
+
+// An answer to an invitation: a short note with the iTIP REPLY (RFC 5546)
+// the organizer's calendar reads. It threads on the invitation without
+// quoting it.
+export type CalendarReplyDraft = {
+  readonly account: string;
+  readonly to: string;
+  readonly subject: string;
+  readonly text: string;
+  readonly ics: string;
+  readonly repliedTo: MessageThread;
 };
 
 // Identifies an existing draft. uidValidity guards against a mailbox reindex

@@ -18,6 +18,12 @@ const structure: MessageStructureObject = {
           id: 'root@example.com',
           size: 24,
         },
+        {
+          part: '1.3',
+          type: 'text/calendar',
+          parameters: { method: 'REQUEST' },
+          size: 900,
+        },
       ],
     },
     {
@@ -48,8 +54,16 @@ const structure: MessageStructureObject = {
 };
 
 describe('message attachment metadata', () => {
-  it('lists file, CID, and attached-message parts without body alternatives', () => {
+  it('lists file, CID, calendar, and attached-message parts without body alternatives', () => {
     expect(listAttachments(structure)).toEqual([
+      {
+        part: '1.3',
+        filename: null,
+        contentType: 'text/calendar',
+        size: 900,
+        disposition: null,
+        contentId: null,
+      },
       {
         part: '2',
         filename: 'invoice.pdf',

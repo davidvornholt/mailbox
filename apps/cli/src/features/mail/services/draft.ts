@@ -8,6 +8,7 @@ import {
   type StaleUidError,
 } from '../errors/errors';
 import type {
+  CalendarReplyDraft,
   DraftHandle,
   DraftInput,
   DraftLocation,
@@ -19,7 +20,7 @@ import { selectDraftsFolder } from './draft-folder';
 import { requireCurrentUidValidity } from './draft-uid';
 import { listFolders, readMessage, readMessageContents } from './imap-ops';
 import { lockMailbox } from './mailbox-lock';
-import { buildMime } from './mime';
+import { buildCalendarReply, buildMime } from './mime';
 
 const readReplySource = (
   client: ImapFlow,
@@ -135,6 +136,17 @@ export const writeDraft = (
     const repliedTo = yield* readReplySource(client, input);
     const raw = yield* buildMime(account, input, repliedTo);
     return yield* appendDraft(client, folder, raw);
+  });
+
+export const writeCalendarReply = (
+  client: ImapFlow,
+  account: Account,
+  draft: CalendarReplyDraft,
+): Effect.Effect<DraftLocation, ImapError | DraftError> =>
+  Effect.gen(function* () {
+    const folders = yield* listFolders(client);
+    const raw = yield* buildCalendarReply(account, draft);
+    return yield* appendDraft(client, selectDraftsFolder(folders), raw);
   });
 
 export const replaceDraft = (
