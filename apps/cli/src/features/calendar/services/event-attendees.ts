@@ -97,8 +97,6 @@ export type AttendeeChanges = {
   readonly removed: ReadonlySet<string>;
 };
 
-// Adds attendees to the series and removes them from every event that lists
-// them, including occurrences the organizer changed.
 export const attendeeChanges = (
   { master, overrides }: CalendarObject,
   add: ReadonlyArray<string>,

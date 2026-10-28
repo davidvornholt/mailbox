@@ -46,8 +46,6 @@ const onlyOne = <C>(
     : Result.fail('ambiguous');
 };
 
-// Finds a collection by its href as the server writes it, by its href in
-// another spelling, or, case-insensitively, by its name.
 export const findCollection = <C extends NamedCollection>(
   collections: ReadonlyArray<C>,
   wanted: string,

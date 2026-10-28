@@ -44,7 +44,7 @@ export const findCalendar = (
           calendar: wanted,
           message:
             reason === 'ambiguous'
-              ? `${account} has several calendars named "${wanted}"; pass the href from "pim calendar list" instead`
+              ? `${account} has several calendars that match "${wanted}"; pass an exact href from "pim calendar list" instead`
               : `${account} has no calendar "${wanted}". Its calendars: ${describeCollections(calendars)}`,
         }),
       ),

@@ -201,11 +201,8 @@ export const applyChanges = (
 ): Result.Result<void, string> => {
   const { master, vcalendar } = object;
   const movesTime = changes.start !== undefined || changes.end !== undefined;
-  // A changed occurrence stored without its series does not move either.
-  if (
-    movesTime &&
-    (isRecurring(object) || master.hasProperty('recurrence-id'))
-  ) {
+  const isOccurrence = master.hasProperty('recurrence-id');
+  if (movesTime && (isRecurring(object) || isOccurrence)) {
     return Result.fail(
       'pim does not move recurring events; change the times of the series or an occurrence in a calendar app',
     );

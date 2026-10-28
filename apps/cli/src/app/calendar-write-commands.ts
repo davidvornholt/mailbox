@@ -67,7 +67,6 @@ const spanOf = (
       Effect.fail(new UsageError({ message: `pim ${command}: ${reason}` })),
   });
 
-// Checks a new start and end together, before pim reads the event.
 const checkedPair = (
   command: string,
   start: EventTime | undefined,
