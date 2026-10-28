@@ -169,7 +169,6 @@ export const updateEvent = (
     );
   });
 
-// Deletes the event and returns what it was.
 export const deleteEvent = (
   account: Account,
   target: EventTarget,

@@ -80,7 +80,7 @@ const create = defineCommand(
   {
     name: 'calendar create',
     summary: 'Create an event',
-    description: `Create an event in one calendar. pim writes no organizer, attendees, or alarms, so creating an event invites and emails no one. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. An all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href and, when the server returns one, its etag.`,
+    description: `Create an event in one calendar. pim writes no organizer, attendees, or alarms, so creating an event invites and emails no one. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href and, when the server returns one, its etag.`,
     flags: {
       account: accountFlag,
       calendar: flag.text('name|href', 'Calendar from "pim calendar list"'),
