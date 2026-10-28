@@ -304,15 +304,16 @@ const cancelOccurrence = (
   if (series === undefined) {
     return (
       occurrence !== undefined &&
-      sequence >= sequenceOf(occurrence) &&
+      !isNewer(occurrence, cancelled) &&
       cancelEvent(occurrence, cancelled)
     );
   }
   const since = excludedSince(series, key);
-  if (
-    sequence < sequenceOf(occurrence ?? series) ||
-    (since !== undefined && sequence <= since)
-  ) {
+  const stale =
+    occurrence === undefined
+      ? sequence < sequenceOf(series)
+      : isNewer(occurrence, cancelled);
+  if (stale || (since !== undefined && sequence <= since)) {
     return false;
   }
   exclude(series, cancelled);

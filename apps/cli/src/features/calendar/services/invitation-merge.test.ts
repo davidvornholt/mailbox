@@ -262,6 +262,35 @@ describe('importChange of a message the copy holds', () => {
       ),
     ],
     [
+      'a cancellation of an occurrence older than its changed version',
+      cancellation(...occurrenceEvent('NEEDS-ACTION')),
+      withOccurrence(
+        storedSeries('ACCEPTED', weekly),
+        occurrenceEvent('ACCEPTED').map((line) =>
+          line === 'DTSTAMP:20261028T080000Z'
+            ? 'DTSTAMP:20261029T080000Z'
+            : line,
+        ),
+      ),
+    ],
+    [
+      'an invitation to an occurrence older than its cancellation, after a series update that excludes it',
+      received(invitationIcs(...occurrenceAt(4))),
+      replayed(
+        storedSeries('ACCEPTED', weekly),
+        cancellation(...occurrenceAt(5)),
+        received(
+          invitationIcs(
+            ...review(
+              'SEQUENCE:3',
+              weekly,
+              'EXDATE;TZID=W. Europe Standard Time:20261111T100000',
+            ),
+          ),
+        ),
+      ),
+    ],
+    [
       'an invitation older than a repeated cancellation',
       received(invitationIcs(...review('SEQUENCE:2'))),
       replayed(

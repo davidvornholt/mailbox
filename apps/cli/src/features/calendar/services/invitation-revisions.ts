@@ -99,19 +99,24 @@ export const exclude = (
 };
 
 // Gives a series that replaces another the cancellations pim recorded in
-// the other that are no older than it. Both must be in the calendar, so
-// that their times resolve.
+// the other that are no older than it, also where the series excludes the
+// occurrence itself but as of an older SEQUENCE. Both must be in the
+// calendar, so that their times resolve.
 export const keepCancellations = (
   before: ICAL.Component,
   series: ICAL.Component,
 ): void => {
   for (const exdate of before.getAllProperties('exdate')) {
     const cancellation = cancellationOf(exdate);
+    const keys = keysOf(exdate);
     if (
       cancellation !== undefined &&
       cancellation >= sequenceOf(series) &&
-      keysOf(exdate).some((key) => excludedSince(series, key) === undefined)
+      keys.some((key) => (excludedSince(series, key) ?? -1) < cancellation)
     ) {
+      for (const key of keys) {
+        removeExclusion(series, key);
+      }
       series.addProperty(new ICAL.Property(structuredClone(exdate.toJSON())));
     }
   }
