@@ -2,6 +2,9 @@ import { Effect, Schema } from 'effect';
 import type {
   CalendarDataError,
   CalendarNotFoundError,
+  EventChangeError,
+  EventHasAttendeesError,
+  ReadOnlyCalendarError,
 } from '../features/calendar/errors/errors';
 import type {
   AddressBookNotFoundError,
@@ -49,6 +52,9 @@ export type CommandError =
   | DavAccountsError
   | CalendarDataError
   | CalendarNotFoundError
+  | ReadOnlyCalendarError
+  | EventHasAttendeesError
+  | EventChangeError
   | ContactDataError
   | AddressBookNotFoundError
   | UsageError

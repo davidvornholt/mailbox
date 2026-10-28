@@ -150,3 +150,40 @@ describe('pim cli', () => {
     subprocessTimeoutMs,
   );
 });
+
+describe('pim calendar', () => {
+  it(
+    'rejects invalid event times before connecting',
+    () => {
+      const event = [
+        'calendar',
+        'create',
+        '--account=test@example.com',
+        '--calendar=Work',
+        '--title=Call',
+      ];
+      const noEnd = runCli([...event, '--start=2026-10-28T10:00']);
+      expect(noEnd.exitCode).toBe(2);
+      expect(errorOf(noEnd).message).toBe(
+        'pim calendar create: a timed event needs --end',
+      );
+      const zone = runCli([
+        ...event,
+        '--start=2026-10-28',
+        '--time-zone=Mars/Olympus',
+      ]);
+      expect(zone.exitCode).toBe(2);
+      expect(errorOf(zone).message).toContain('--time-zone must be');
+      const update = runCli([
+        'calendar',
+        'update',
+        '--account=test@example.com',
+        '--href=/a.ics',
+        '--etag=x',
+      ]);
+      expect(update.exitCode).toBe(2);
+      expect(errorOf(update).message).toContain('pass at least one of');
+    },
+    subprocessTimeoutMs,
+  );
+});

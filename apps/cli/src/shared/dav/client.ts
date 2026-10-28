@@ -3,6 +3,7 @@ import type { DavSettings } from '../accounts/account';
 import { loginCommand } from '../accounts/secrets';
 import {
   DavAuthError,
+  DavConflictError,
   DavError,
   DavNotFoundError,
   type DavRequestError,
@@ -38,6 +39,7 @@ const requestTimeout = Duration.seconds(requestTimeoutSeconds);
 const httpUnauthorized = 401;
 const httpForbidden = 403;
 const httpNotFound = 404;
+const httpPreconditionFailed = 412;
 const xmlContentType = 'application/xml; charset=utf-8';
 
 // Every prefix the request bodies use; the server answers with its own.
@@ -62,6 +64,12 @@ const failure = (
     return new DavNotFoundError({
       href: request.href,
       message: `${request.href} does not exist on ${new URL(login.url).host}`,
+    });
+  }
+  if (reply.status === httpPreconditionFailed) {
+    return new DavConflictError({
+      href: request.href,
+      message: `${request.method} ${request.href} was refused because ${new URL(login.url).host} holds a different version than the request expected (HTTP 412). Read it again for its current etag`,
     });
   }
   // The response body stays out of the message: an error page can echo the

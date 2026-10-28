@@ -157,3 +157,57 @@ export const fetchCalendarObject = (
       ics: reply.body,
     })),
   );
+
+const calendarContentType = 'text/calendar; charset=utf-8';
+
+const putCalendarObject = (
+  client: DavClient,
+  href: string,
+  ics: string,
+  precondition: Readonly<Record<string, string>>,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  client
+    .send({
+      method: 'PUT',
+      href,
+      body: ics,
+      contentType: calendarContentType,
+      headers: precondition,
+    })
+    .pipe(Effect.map((reply) => reply.headers.get('etag') ?? undefined));
+
+// Stores a new calendar object, and never replaces one at the same href.
+// Returns its ETag, which the server leaves out when it changed the data as
+// it stored it (RFC 4791, section 5.3.4).
+export const createCalendarObject = (
+  client: DavClient,
+  href: string,
+  ics: string,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  putCalendarObject(client, href, ics, { 'if-none-match': '*' });
+
+// Replaces the calendar object only while the server still holds the
+// version with this ETag.
+export const replaceCalendarObject = (
+  client: DavClient,
+  href: string,
+  ics: string,
+  etag: string,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  putCalendarObject(client, href, ics, { 'if-match': etag });
+
+// Deletes the calendar object only while the server still holds the version
+// with this ETag. Schedule-Reply: F asks a scheduling server not to tell the
+// organizer when an attendee deletes an invitation (RFC 6638, section 8.1).
+export const deleteCalendarObject = (
+  client: DavClient,
+  href: string,
+  etag: string,
+): Effect.Effect<void, DavRequestError> =>
+  client
+    .send({
+      method: 'DELETE',
+      href,
+      headers: { 'if-match': etag, 'schedule-reply': 'F' },
+    })
+    .pipe(Effect.asVoid);

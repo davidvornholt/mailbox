@@ -14,6 +14,7 @@ export type RecordedRequest = {
   readonly url: string;
   readonly depth: string | null;
   readonly authorization: string | null;
+  readonly headers: Headers;
   readonly body: string;
 };
 
@@ -25,7 +26,8 @@ export const davLogin = {
 } as const;
 
 // A DAV server that answers "METHOD /path" from a table, with 404 for
-// anything else, and records every request.
+// anything else, and records every request. "METHOD /folder/*" answers for
+// any resource in the folder without its own route.
 export const fakeDavServer = (routes: Readonly<Record<string, FakeReply>>) => {
   const requests: Array<RecordedRequest> = [];
   const fetch: Fetch = (url, init) => {
@@ -36,9 +38,13 @@ export const fakeDavServer = (routes: Readonly<Record<string, FakeReply>>) => {
       url,
       depth: headers.get('depth'),
       authorization: headers.get('authorization'),
+      headers,
       body: typeof init.body === 'string' ? init.body : '',
     });
-    const reply = routes[`${method} ${new URL(url).pathname}`];
+    const { pathname } = new URL(url);
+    const folder = pathname.slice(0, pathname.lastIndexOf('/') + 1);
+    const reply =
+      routes[`${method} ${pathname}`] ?? routes[`${method} ${folder}*`];
     return Promise.resolve(
       reply === undefined
         ? new Response('no such resource', { status: notFoundCode })
