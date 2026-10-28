@@ -1,6 +1,6 @@
 ---
 name: pim-calendar
-description: Read the user's calendars and events over CalDAV, create, change, or delete events, invite people to meetings, and answer invitations the user received, with the pim command. Use when the user asks about their schedule, appointments, or free time, wants an event added, moved, or removed, wants people invited, or wants an invitation accepted or declined.
+description: Read the user's calendars and events over CalDAV, create, change, or delete events, invite people to meetings, and put invitations the user received into the calendar or answer them, with the pim command. Use when the user asks about their schedule, appointments, or free time, wants an event added, moved, or removed, wants people invited, wants an invitation, update, or cancellation they received in their calendar, or wants an invitation accepted or declined.
 ---
 
 # pim calendar

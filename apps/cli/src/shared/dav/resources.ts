@@ -33,8 +33,9 @@ const put = (
 export const createResource = (
   client: DavClient,
   resource: ResourceBody,
+  headers: Readonly<Record<string, string>> = {},
 ): Effect.Effect<string | undefined, DavRequestError> =>
-  put(client, resource, { 'if-none-match': '*' });
+  put(client, resource, { ...headers, 'if-none-match': '*' });
 
 const singleEntityTag = /^(?:W\/)?"[^"]*"$/u;
 
@@ -58,9 +59,12 @@ export const replaceResource = (
   client: DavClient,
   resource: ResourceBody,
   etag: string,
+  headers: Readonly<Record<string, string>> = {},
 ): Effect.Effect<string | undefined, DavRequestError> =>
   ifMatch(resource.href, etag).pipe(
-    Effect.flatMap((precondition) => put(client, resource, precondition)),
+    Effect.flatMap((precondition) =>
+      put(client, resource, { ...headers, ...precondition }),
+    ),
   );
 
 // Deletes the resource only while the server still holds the version with

@@ -36,7 +36,11 @@ import {
   isRecurring,
   newEventIcs,
 } from './event-write';
-import { meetingOrganizer, writeOrganizer } from './scheduling';
+import {
+  invitingOrganizer,
+  meetingOrganizer,
+  writeOrganizer,
+} from './scheduling';
 
 export type CalendarWriteError =
   | CalendarError
@@ -210,19 +214,12 @@ export type EventTarget = {
 };
 
 // The event at the target's href, provided it is still the version the
-// caller read and pim may make the write, with the organizer the server
-// emails the attendees as when the write makes it email them.
-const changeableEvent = (
+// caller read and the write may change every occurrence it touches.
+const currentEvent = (
   client: DavClient,
-  account: Account,
   target: EventTarget,
-  invites: boolean,
 ): Effect.Effect<
-  {
-    readonly resource: CalendarResource;
-    readonly object: CalendarObject;
-    readonly organizer: Organizer | undefined;
-  },
+  { readonly resource: CalendarResource; readonly object: CalendarObject },
   CalendarWriteError
 > =>
   Effect.gen(function* () {
@@ -247,8 +244,29 @@ const changeableEvent = (
         message: `${href} is a recurring event, so this would affect every occurrence. Pass --series if that is intended`,
       });
     }
+    return { resource, object };
+  });
+
+// The current event at the target's href, provided pim may make the write,
+// with the organizer the server emails the attendees as when the write
+// makes it email them.
+const changeableEvent = (
+  client: DavClient,
+  account: Account,
+  target: EventTarget,
+  invites: boolean,
+): Effect.Effect<
+  {
+    readonly resource: CalendarResource;
+    readonly object: CalendarObject;
+    readonly organizer: Organizer | undefined;
+  },
+  CalendarWriteError
+> =>
+  Effect.gen(function* () {
+    const { resource, object } = yield* currentEvent(client, target);
     const organizer = yield* writeOrganizer(client, account, {
-      href,
+      href: target.href,
       object,
       invites,
       notifyAttendees: target.notifyAttendees,
@@ -297,8 +315,37 @@ export const updateEvent = (
       : yield* storedDetail(client, written, local);
   });
 
-// Deleting a meeting the user organizes makes the server email the
-// attendees a cancellation.
+// Whether deleting the event makes the server email anyone. Deleting a
+// meeting the user organizes sends the attendees a cancellation. pim deletes
+// the user's copy of a meeting someone else organizes without telling them,
+// as the server would otherwise send the organizer a decline.
+const deleteNotifies = (
+  client: DavClient,
+  account: Account,
+  target: EventTarget,
+  object: CalendarObject,
+): Effect.Effect<boolean, CalendarWriteError> =>
+  Effect.gen(function* () {
+    const { href, notifyAttendees } = target;
+    const inviter = yield* invitingOrganizer(client, account, object);
+    if (inviter === undefined) {
+      const organizer = yield* writeOrganizer(client, account, {
+        href,
+        object,
+        invites: false,
+        notifyAttendees,
+      });
+      return organizer !== undefined;
+    }
+    if (notifyAttendees) {
+      return yield* new EventHasAttendeesError({
+        href,
+        message: `${href} is a meeting ${inviter} organizes. Deleting it with --notify-attendees would tell ${inviter} that the user declined; answer the invitation email with "pim calendar respond --partstat declined" instead, or leave out --notify-attendees to delete it without telling anyone`,
+      });
+    }
+    return false;
+  });
+
 export const deleteEvent = (
   account: Account,
   target: EventTarget,
@@ -307,12 +354,8 @@ export const deleteEvent = (
   Effect.gen(function* () {
     const dav = yield* Dav;
     const client = yield* dav.client(account);
-    const { resource, organizer } = yield* changeableEvent(
-      client,
-      account,
-      target,
-      false,
-    );
+    const { resource, object } = yield* currentEvent(client, target);
+    const notifies = yield* deleteNotifies(client, account, target, object);
     const detail = yield* detailOf(
       {
         account: account.email,
@@ -322,11 +365,6 @@ export const deleteEvent = (
       },
       local,
     );
-    yield* deleteCalendarObject(
-      client,
-      target.href,
-      target.etag,
-      organizer !== undefined,
-    );
+    yield* deleteCalendarObject(client, target.href, target.etag, notifies);
     return withoutDelivery(detail);
   });

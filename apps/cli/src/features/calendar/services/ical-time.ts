@@ -159,3 +159,38 @@ export const localDayWindow = (
     endMs: zonedMillis({ ...addDays(to, 1), ...midnight }, local),
   };
 };
+
+const utc = DateTime.zoneMakeOffset(0);
+
+// A RECURRENCE-ID or EXDATE value as the instant it stands for, so that the
+// same occurrence matches in UTC and in any zone.
+export const timeKey = (value: unknown, tzid: unknown): string => {
+  if (!(value instanceof ICAL.Time)) {
+    return String(value);
+  }
+  return value.isDate
+    ? formatDate(value)
+    : String(
+        instantOf(value, typeof tzid === 'string' ? tzid : undefined, utc),
+      );
+};
+
+// Adds the zones of the other calendar data that this one lacks, so that
+// the times of both resolve alike.
+export const addTimezones = (
+  vcalendar: ICAL.Component,
+  from: ICAL.Component,
+): void => {
+  const known = new Set(
+    vcalendar
+      .getAllSubcomponents('vtimezone')
+      .map((zone) => String(zone.getFirstPropertyValue('tzid'))),
+  );
+  for (const zone of from.getAllSubcomponents('vtimezone')) {
+    if (!known.has(String(zone.getFirstPropertyValue('tzid')))) {
+      vcalendar.addSubcomponent(
+        new ICAL.Component(ICAL.parse(zone.toString())),
+      );
+    }
+  }
+};

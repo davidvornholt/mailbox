@@ -40,6 +40,7 @@ const httpUnauthorized = 401;
 const httpForbidden = 403;
 const httpNotFound = 404;
 const httpPreconditionFailed = 412;
+const httpServerError = 500;
 const xmlContentType = 'application/xml; charset=utf-8';
 
 // Every prefix the request bodies use; the server answers with its own.
@@ -78,6 +79,7 @@ const failure = (
     reply.status === httpForbidden ? ': the server forbids it' : '';
   return new DavError({
     message: `${request.method} ${request.href} failed with HTTP ${reply.status}${reason}`,
+    ...(reply.status >= httpServerError ? { uncertain: true } : {}),
   });
 };
 
@@ -129,6 +131,7 @@ export const makeDavClient = (login: DavLogin, fetch: Fetch) => {
       catch: (cause) =>
         new DavError({
           message: `${request.method} ${request.href} failed: ${String(cause)}`,
+          uncertain: true,
         }),
     }).pipe(
       Effect.timeoutOrElse({
@@ -137,6 +140,7 @@ export const makeDavClient = (login: DavLogin, fetch: Fetch) => {
           Effect.fail(
             new DavError({
               message: `${request.method} ${request.href} timed out after ${requestTimeoutSeconds}s`,
+              uncertain: true,
             }),
           ),
       }),

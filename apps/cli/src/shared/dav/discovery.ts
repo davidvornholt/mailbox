@@ -11,7 +11,8 @@ export type Principal = {
   readonly calendarHomes: ReadonlyArray<string>;
   readonly addressBookHomes: ReadonlyArray<string>;
   // Addresses the server treats as this user in invitations, such as
-  // mailto:me@example.com, as bare emails.
+  // mailto:me@example.com, as bare emails. Each is listed decoded and as the
+  // server writes it, which is how the server compares it with invitations.
   readonly addresses: ReadonlyArray<string>;
 };
 
@@ -67,9 +68,10 @@ export const discoverPrincipal = (
               .filter((address) =>
                 address.toLowerCase().startsWith(mailtoPrefix),
               )
-              .map((address) =>
-                decodePercent(address.slice(mailtoPrefix.length)),
-              ),
+              .flatMap((address) => {
+                const written = address.slice(mailtoPrefix.length);
+                return [...new Set([decodePercent(written), written])];
+              }),
     };
   });
 

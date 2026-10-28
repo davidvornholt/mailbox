@@ -43,6 +43,10 @@ export class DavConflictError extends Schema.TaggedError<DavConflictError>()(
 
 export class DavError extends Schema.TaggedError<DavError>()('DavError', {
   message: Schema.String,
+  // The request may have reached the server, and nothing tells whether the
+  // server applied it: the connection failed or timed out, or the server
+  // failed (HTTP 5xx).
+  uncertain: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export type DavRequestError =

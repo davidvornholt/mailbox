@@ -199,6 +199,35 @@ export const replaceCalendarObject = (
     etag,
   );
 
+// Schedule-Reply: F asks a server not to tell the organizer about a change
+// an attendee makes. RFC 6638 (section 8.1) defines it for DELETE only, but
+// sabre/dav honors it on PUT as well.
+const noReply = { 'schedule-reply': 'F' };
+
+export const createCalendarObjectSilently = (
+  client: DavClient,
+  href: string,
+  ics: string,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  createResource(
+    client,
+    { href, body: ics, contentType: calendarContentType },
+    noReply,
+  );
+
+export const replaceCalendarObjectSilently = (
+  client: DavClient,
+  href: string,
+  ics: string,
+  etag: string,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  replaceResource(
+    client,
+    { href, body: ics, contentType: calendarContentType },
+    etag,
+    noReply,
+  );
+
 // Whether the server sends the invitations, updates, and cancellations for
 // changes to the resource itself (RFC 6638, section 2).
 export const schedulesFor = (
@@ -215,18 +244,12 @@ export const schedulesFor = (
       ),
     );
 
-// Without notifyAttendees, Schedule-Reply: F asks a scheduling server not
-// to tell the organizer when an attendee deletes an invitation (RFC 6638,
-// section 8.1).
+// Without notifyAttendees, the server tells no one, not even the organizer
+// when an attendee deletes an invitation.
 export const deleteCalendarObject = (
   client: DavClient,
   href: string,
   etag: string,
   notifyAttendees: boolean,
 ): Effect.Effect<void, DavRequestError> =>
-  deleteResource(
-    client,
-    href,
-    etag,
-    notifyAttendees ? {} : { 'schedule-reply': 'F' },
-  );
+  deleteResource(client, href, etag, notifyAttendees ? {} : noReply);

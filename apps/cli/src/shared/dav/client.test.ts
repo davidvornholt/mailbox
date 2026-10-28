@@ -97,7 +97,7 @@ describe('discoverPrincipal', () => {
       displayName: undefined,
       calendarHomes: ['/calendars/me/'],
       addressBookHomes: [],
-      addresses: ['me+work@example.com'],
+      addresses: ['me+work@example.com', 'me%2Bwork@example.com'],
     });
     expect(requests.map(({ method, depth }) => `${method} ${depth}`)).toEqual([
       'PROPFIND 0',
