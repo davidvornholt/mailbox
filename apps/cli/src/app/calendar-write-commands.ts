@@ -5,6 +5,7 @@ import {
   updateEvent,
 } from '../features/calendar/services/calendar-write';
 import {
+  type EventSpan,
   type EventTime,
   parseEventTime,
   spanBetween,
@@ -54,6 +55,27 @@ const timeOf = (
         }),
       ),
   });
+
+const spanOf = (
+  command: string,
+  start: EventTime,
+  end: EventTime | undefined,
+): Effect.Effect<EventSpan, UsageError> =>
+  Result.match(spanBetween(start, end), {
+    onSuccess: Effect.succeed,
+    onFailure: (reason) =>
+      Effect.fail(new UsageError({ message: `pim ${command}: ${reason}` })),
+  });
+
+// Checks a new start and end together, before pim reads the event.
+const checkedPair = (
+  command: string,
+  start: EventTime | undefined,
+  end: EventTime | undefined,
+): Effect.Effect<void, UsageError> =>
+  start === undefined || end === undefined
+    ? Effect.void
+    : Effect.asVoid(spanOf(command, start, end));
 
 const optionalTimeOf = (
   command: string,
@@ -112,12 +134,7 @@ const create = defineCommand(
       const zone = yield* zoneOf(command, values.timeZone);
       const start = yield* timeOf(command, 'start', values.start, zone);
       const end = yield* optionalTimeOf(command, 'end', values.end, zone);
-      const span = spanBetween(start, end);
-      if (Result.isFailure(span)) {
-        return yield* new UsageError({
-          message: `pim ${command}: ${span.failure}`,
-        });
-      }
+      const span = yield* spanOf(command, start, end);
       const config = yield* AccountConfig;
       const account = yield* config.getAccount(values.account);
       const event = yield* createEvent(
@@ -125,7 +142,7 @@ const create = defineCommand(
         {
           calendar: values.calendar,
           title: values.title,
-          span: span.success,
+          span,
           ...(values.location === undefined
             ? {}
             : { location: values.location }),
@@ -205,6 +222,7 @@ const update = defineCommand(
       const zone = yield* zoneOf(command, values.timeZone);
       const start = yield* optionalTimeOf(command, 'start', values.start, zone);
       const end = yield* optionalTimeOf(command, 'end', values.end, zone);
+      yield* checkedPair(command, start, end);
       const config = yield* AccountConfig;
       const account = yield* config.getAccount(values.account);
       const event = yield* updateEvent(

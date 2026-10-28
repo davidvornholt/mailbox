@@ -97,12 +97,17 @@ export type AttendeeChanges = {
   readonly removed: ReadonlySet<string>;
 };
 
+// Adds attendees to the series and removes them from every event that lists
+// them, including occurrences the organizer changed.
 export const attendeeChanges = (
-  master: ICAL.Component,
+  { master, overrides }: CalendarObject,
   add: ReadonlyArray<string>,
   remove: ReadonlyArray<string>,
 ): Result.Result<AttendeeChanges, string> => {
   const present = attendeeAddresses(master);
+  const listed = new Set(
+    [master, ...overrides].flatMap((event) => [...attendeeAddresses(event)]),
+  );
   const organizer = organizerAddress(master);
   const added = newAttendees(
     add,
@@ -111,7 +116,7 @@ export const attendeeChanges = (
   if (Result.isFailure(added)) {
     return Result.fail(added.failure);
   }
-  const missing = remove.find((email) => !present.has(keyOf(email)));
+  const missing = remove.find((email) => !listed.has(keyOf(email)));
   return missing === undefined
     ? Result.succeed({
         added: added.success,

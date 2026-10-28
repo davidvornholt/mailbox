@@ -102,13 +102,14 @@ describe('newAttendees', () => {
 });
 
 describe('attendeeChanges', () => {
-  const master = vcalendarOf(
+  const vcalendar = vcalendarOf(
     ...vevent(
       'UID:a',
       'ORGANIZER:mailto:me@example.com',
       'ATTENDEE:mailto:ana@example.com',
     ),
-  ).getFirstSubcomponent('vevent');
+  );
+  const master = vcalendar.getFirstSubcomponent('vevent');
 
   it.each([
     [[], ['bo@example.org'], 'bo@example.org is not an attendee'],
@@ -119,7 +120,7 @@ describe('attendeeChanges', () => {
     const result =
       master === null
         ? Result.fail('no event')
-        : attendeeChanges(master, add, remove);
+        : attendeeChanges({ vcalendar, master, overrides: [] }, add, remove);
     expect(Result.isFailure(result) && result.failure).toContain(reason);
   });
 });

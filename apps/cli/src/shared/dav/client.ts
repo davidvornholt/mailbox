@@ -43,6 +43,17 @@ const httpPreconditionFailed = 412;
 const httpServerError = 500;
 const xmlContentType = 'application/xml; charset=utf-8';
 
+const writeMethods = new Set(['PUT', 'DELETE']);
+
+const refusal = (method: string, status: number): string => {
+  if (status !== httpForbidden) {
+    return '';
+  }
+  return writeMethods.has(method)
+    ? ': the server forbids it. The account may only read this calendar or address book; check "writable" in "pim calendar list" or "pim contacts books"'
+    : ': the server forbids it';
+};
+
 // Every prefix the request bodies use; the server answers with its own.
 const xmlNamespaces =
   'xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:card="urn:ietf:params:xml:ns:carddav" xmlns:cs="http://calendarserver.org/ns/" xmlns:ical="http://apple.com/ns/ical/"';
@@ -75,10 +86,8 @@ const failure = (
   }
   // The response body stays out of the message: an error page can echo the
   // request, including the password and the authorization header.
-  const reason =
-    reply.status === httpForbidden ? ': the server forbids it' : '';
   return new DavError({
-    message: `${request.method} ${request.href} failed with HTTP ${reply.status}${reason}`,
+    message: `${request.method} ${request.href} failed with HTTP ${reply.status}${refusal(request.method, reply.status)}`,
     ...(reply.status >= httpServerError ? { uncertain: true } : {}),
   });
 };
