@@ -80,7 +80,7 @@ export const matchesContact = (
 
 // ical.js decodes a value only when it is read, so a malformed field, such as
 // TEL;VALUE=utc-offset:garbage, throws here rather than in parseVCard.
-const readContact = <A>(
+export const readContact = <A>(
   href: string,
   read: () => A,
 ): Effect.Effect<A, ContactDataError> =>

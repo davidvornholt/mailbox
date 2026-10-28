@@ -190,3 +190,18 @@ export const hasResourceType = (
     types !== undefined && firstChild(types, namespace, localName) !== undefined
   );
 };
+
+const writePrivileges = new Set(['all', 'write', 'write-content']);
+
+// Whether the current user may change the collection's contents, if the
+// server reported its current-user-privilege-set.
+export const isWritable = (resource: DavResource): boolean | undefined => {
+  const privileges = findProp(resource, ns.dav, 'current-user-privilege-set');
+  return privileges === undefined
+    ? undefined
+    : childElements(privileges, ns.dav, 'privilege').some((privilege) =>
+        childElements(privilege, ns.dav).some((granted) =>
+          writePrivileges.has(granted.localName ?? ''),
+        ),
+      );
+};

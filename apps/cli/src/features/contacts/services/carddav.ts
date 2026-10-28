@@ -6,8 +6,14 @@ import {
   listCollections,
 } from '../../../shared/dav/discovery';
 import {
+  createResource,
+  deleteResource,
+  replaceResource,
+} from '../../../shared/dav/resources';
+import {
   type DavResource,
   hasResourceType,
+  isWritable,
   ns,
   propFailure,
   propText,
@@ -36,7 +42,7 @@ export const listAddressBooks = (
     const collections = yield* listCollections(
       client,
       principal.addressBookHomes,
-      '<d:resourcetype/><d:displayname/><card:addressbook-description/>',
+      '<d:resourcetype/><d:displayname/><card:addressbook-description/><d:current-user-privilege-set/>',
     );
     return collections
       .filter((resource) =>
@@ -48,6 +54,7 @@ export const listAddressBooks = (
           ns.carddav,
           'addressbook-description',
         );
+        const writable = isWritable(resource);
         return {
           account: client.login.account,
           href: resource.href,
@@ -55,6 +62,7 @@ export const listAddressBooks = (
             propText(resource, ns.dav, 'displayname') ??
             lastSegment(resource.href),
           ...(description === undefined ? {} : { description }),
+          ...(writable === undefined ? {} : { writable }),
         };
       });
   });
@@ -112,3 +120,30 @@ export const fetchContact = (
       vcard: reply.body,
     })),
   );
+
+const vcardContentType = 'text/vcard; charset=utf-8';
+
+export const createContactResource = (
+  client: DavClient,
+  href: string,
+  vcard: string,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  createResource(client, { href, body: vcard, contentType: vcardContentType });
+
+export const replaceContactResource = (
+  client: DavClient,
+  href: string,
+  vcard: string,
+  etag: string,
+): Effect.Effect<string | undefined, DavRequestError> =>
+  replaceResource(
+    client,
+    { href, body: vcard, contentType: vcardContentType },
+    etag,
+  );
+
+export const deleteContactResource = (
+  client: DavClient,
+  href: string,
+  etag: string,
+): Effect.Effect<void, DavRequestError> => deleteResource(client, href, etag);

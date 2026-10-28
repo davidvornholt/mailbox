@@ -19,6 +19,7 @@ import {
   printed,
 } from './command-support';
 import { contactCommands } from './contact-commands';
+import { contactWriteCommands } from './contact-write-commands';
 import { draftCommands } from './draft-commands';
 
 const account = flag.text('email', 'Account email from "pim accounts"');
@@ -256,7 +257,7 @@ const attachment = defineCommand(
 export const program: Program<CommandEffect> = {
   name: 'pim',
   summary:
-    'pim: search, read, and draft email, read and change calendar events, and read contacts. It never sends mail.',
+    'pim: search, read, and draft email, read and change calendar events and contacts. It never sends mail.',
   footer: [
     'Run "pim <command> --help" for its options. Write --option=value when a value starts with "--".',
     'Commands print JSON on stdout. Errors print {"error": {"tag", "message"}} on stderr and exit 1, or 2 for invalid arguments.',
@@ -274,5 +275,6 @@ export const program: Program<CommandEffect> = {
     ...calendarCommands,
     ...calendarWriteCommands,
     ...contactCommands,
+    ...contactWriteCommands,
   ],
 };

@@ -29,26 +29,32 @@ export const parseVCard = (
     ),
   );
 
-const clean = (value: unknown): string | undefined => {
+export const clean = (value: unknown): string | undefined => {
   const text = typeof value === 'string' ? value.trim() : '';
   return text === '' ? undefined : text;
 };
 
-const firstText = (card: ICAL.Component, name: string): string | undefined =>
-  clean(card.getFirstPropertyValue(name)?.toString());
+export const firstText = (
+  card: ICAL.Component,
+  name: string,
+): string | undefined => clean(card.getFirstPropertyValue(name)?.toString());
 
-// Structured values such as N, ORG, and ADR come back as arrays of parts.
-const parts = (card: ICAL.Component, name: string): ReadonlyArray<string> => {
+// Structured values such as N, ORG, and ADR come back as arrays of parts,
+// or as the one part itself, already unescaped, when there is only one.
+export const parts = (
+  card: ICAL.Component,
+  name: string,
+): ReadonlyArray<string> => {
   const value: unknown = card.getFirstPropertyValue(name);
   if (Array.isArray(value)) {
     return value.map((part) =>
       Array.isArray(part) ? part.join(' ') : String(part ?? ''),
     );
   }
-  return typeof value === 'string' ? value.split(';') : [];
+  return typeof value === 'string' ? [value] : [];
 };
 
-const joined = (
+export const joined = (
   values: ReadonlyArray<string>,
   separator: string,
 ): string | undefined =>

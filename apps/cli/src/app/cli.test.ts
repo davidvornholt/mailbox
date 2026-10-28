@@ -187,3 +187,42 @@ describe('pim calendar', () => {
     subprocessTimeoutMs,
   );
 });
+
+describe('pim contacts', () => {
+  it(
+    'rejects invalid contacts before connecting',
+    () => {
+      const create = ['contacts', 'create', '--account=test@example.com'];
+      const nameless = runCli([
+        ...create,
+        '--address-book=Contacts',
+        '--email=ada@example.org',
+      ]);
+      expect(nameless.exitCode).toBe(2);
+      expect(errorOf(nameless).message).toContain('pass at least one of');
+      const phone = runCli([
+        ...create,
+        '--address-book=Contacts',
+        '--name=Ada',
+        '--phone=call me',
+      ]);
+      expect(phone.exitCode).toBe(2);
+      expect(errorOf(phone).message).toBe(
+        'pim contacts create: --phone "call me" is not a phone number of digits, spaces, and + ( ) . / -',
+      );
+      const update = ['contacts', 'update', '--account=test@example.com'];
+      const target = ['--href=/a.vcf', '--etag=x'];
+      const unchanged = runCli([...update, ...target]);
+      expect(unchanged.exitCode).toBe(2);
+      expect(errorOf(unchanged).message).toBe(
+        'pim contacts update: pass at least one change',
+      );
+      const emptyName = runCli([...update, ...target, '--name=']);
+      expect(emptyName.exitCode).toBe(2);
+      expect(errorOf(emptyName).message).toBe(
+        'pim contacts update: --name is empty',
+      );
+    },
+    subprocessTimeoutMs,
+  );
+});
