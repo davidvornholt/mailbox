@@ -201,7 +201,8 @@ export const applyChanges = (
 ): Result.Result<void, string> => {
   const { master, vcalendar } = object;
   const movesTime = changes.start !== undefined || changes.end !== undefined;
-  if (movesTime && isRecurring(object)) {
+  const isOccurrence = master.hasProperty('recurrence-id');
+  if (movesTime && (isRecurring(object) || isOccurrence)) {
     return Result.fail(
       'pim does not move recurring events; change the times of the series or an occurrence in a calendar app',
     );
@@ -215,7 +216,7 @@ export const applyChanges = (
     return Result.fail(span.failure);
   }
   const attendees = attendeeChanges(
-    master,
+    object,
     changes.addAttendees ?? [],
     changes.removeAttendees ?? [],
   );

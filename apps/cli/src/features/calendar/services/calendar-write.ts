@@ -21,7 +21,12 @@ import {
   replaceCalendarObject,
 } from './caldav';
 import { type CalendarError, findCalendar, readEvent } from './calendar';
-import { newAttendees, type Organizer, setOrganizer } from './event-attendees';
+import {
+  clearForcedSends,
+  newAttendees,
+  type Organizer,
+  setOrganizer,
+} from './event-attendees';
 import {
   type CalendarObject,
   eventDetail,
@@ -83,11 +88,11 @@ const withoutDelivery = (detail: EventDetail): EventDetail => ({
   attendees: detail.attendees.map(withoutStatus),
 });
 
-// The event as the server stored it after a write that notified attendees.
-// The server notes how it delivered each message (RFC 6638, section 3.2.9)
-// and, as it changed the data, may give the new etag only on a read. The
-// write already happened, so a failed read falls back to the event pim
-// wrote.
+// The event as the server stored it. A server that changes the event as it
+// stores it gives the new etag only on a read (RFC 4791, section 5.3.4).
+// After a write that notified attendees, it has also noted how it delivered
+// each message (RFC 6638, section 3.2.9). The write already happened, so a
+// failed read falls back to the event pim wrote.
 export const storedDetail = (
   client: DavClient,
   written: EventDetail,
@@ -198,7 +203,7 @@ export const createEvent = (
     const written = yield* detail(
       yield* createCalendarObject(client, href, ics),
     );
-    return invitation === undefined
+    return invitation === undefined && written.etag !== undefined
       ? written
       : yield* storedDetail(client, written, local);
   });
@@ -295,6 +300,7 @@ export const updateEvent = (
       if (organizer !== undefined && !event.hasProperty('organizer')) {
         setOrganizer(event, organizer);
       }
+      clearForcedSends(event);
     }
     const now = yield* Clock.currentTimeMillis;
     const applied = yield* readEvent(href, () =>
@@ -310,7 +316,7 @@ export const updateEvent = (
     const written = yield* detail(
       yield* replaceCalendarObject(client, href, ics, etag),
     );
-    return organizer === undefined
+    return organizer === undefined && written.etag !== undefined
       ? written
       : yield* storedDetail(client, written, local);
   });

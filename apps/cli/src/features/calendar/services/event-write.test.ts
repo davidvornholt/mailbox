@@ -190,7 +190,9 @@ describe('applyChanges', () => {
     expect(result).toEqual(Result.fail('--end must be after --start'));
     expect(object.vcalendar.toString()).toBe(before);
   });
+});
 
+describe('applyChanges to a recurring event', () => {
   const series = [
     ...weeklySeries,
     ...vevent(
@@ -221,8 +223,19 @@ describe('applyChanges', () => {
     ]);
   });
 
-  it('does not move a recurring event', () => {
-    const { result } = changed(objectOf(...series), {
+  it.each([
+    ['a series', series],
+    [
+      'an occurrence stored without its series',
+      vevent(
+        'UID:series@example.com',
+        'RECURRENCE-ID;TZID=Europe/Berlin:20261027T100000',
+        'DTSTART;TZID=Europe/Berlin:20261027T120000',
+        'DTEND;TZID=Europe/Berlin:20261027T130000',
+      ),
+    ],
+  ])('does not move %s', (_name, content) => {
+    const { result } = changed(objectOf(...content), {
       start: { _tag: 'Instant', ms: Date.parse('2026-10-20T09:00:00Z') },
     });
     expect(Result.isFailure(result) && result.failure).toContain(
@@ -314,5 +327,27 @@ describe('applyChanges to a meeting', () => {
     });
     expect(result).toEqual(Result.fail('bo@example.org is not an attendee'));
     expect(object.vcalendar.toString()).toBe(before);
+  });
+
+  it('removes an attendee whom only a changed occurrence lists', () => {
+    const { result, ics } = changed(
+      objectOf(
+        ...meeting.slice(0, -1),
+        ...guests,
+        'RRULE:FREQ=WEEKLY;COUNT=3',
+        'END:VEVENT',
+        ...vevent(
+          'UID:m@example.com',
+          'RECURRENCE-ID;TZID=Europe/Berlin:20261104T100000',
+          'DTSTART;TZID=Europe/Berlin:20261104T100000',
+          'DURATION:PT1H30M',
+          ...guests,
+          'ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:bo@example.org',
+        ),
+      ),
+      { removeAttendees: ['bo@example.org'] },
+    );
+    expect(result).toEqual(Result.void);
+    expect(ics.filter((line) => line.includes('bo@example.org'))).toEqual([]);
   });
 });

@@ -228,6 +228,26 @@ describe('updateEvent of a meeting', () => {
   });
 });
 
+describe('updateEvent of a meeting with a stored SCHEDULE-FORCE-SEND', () => {
+  it('does not write it back', async () => {
+    const forced = meeting.map((line) =>
+      line.replace('ATTENDEE;', 'ATTENDEE;SCHEDULE-FORCE-SEND=REQUEST;'),
+    );
+    const { requests } = await succeedsOnFakeDav(
+      eventRoutes(icsOf(...forced)),
+      updateEvent(
+        davAccount,
+        target({ notifyAttendees: true }),
+        { title: 'Renamed' },
+        berlin,
+      ),
+    );
+    const [put] = writeRequests(requests);
+    expect(put?.body).toContain('SUMMARY:Renamed');
+    expect(put?.body).not.toContain('SCHEDULE-FORCE-SEND');
+  });
+});
+
 describe('deleteEvent of a meeting', () => {
   it('cancels a meeting the user organizes with --notify-attendees', async () => {
     const { value, requests } = await succeedsOnFakeDav(

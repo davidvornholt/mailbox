@@ -183,6 +183,19 @@ describe('pim calendar', () => {
       ]);
       expect(update.exitCode).toBe(2);
       expect(errorOf(update).message).toContain('pass at least one of');
+      const reversed = runCli([
+        'calendar',
+        'update',
+        '--account=test@example.com',
+        '--href=/a.ics',
+        '--etag=x',
+        '--start=2026-10-28T10:00',
+        '--end=2026-10-28T09:00',
+      ]);
+      expect(reversed.exitCode).toBe(2);
+      expect(errorOf(reversed).message).toBe(
+        'pim calendar update: --end must be after --start',
+      );
     },
     subprocessTimeoutMs,
   );

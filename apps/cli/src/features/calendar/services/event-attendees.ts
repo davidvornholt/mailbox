@@ -98,11 +98,14 @@ export type AttendeeChanges = {
 };
 
 export const attendeeChanges = (
-  master: ICAL.Component,
+  { master, overrides }: CalendarObject,
   add: ReadonlyArray<string>,
   remove: ReadonlyArray<string>,
 ): Result.Result<AttendeeChanges, string> => {
   const present = attendeeAddresses(master);
+  const listed = new Set(
+    [master, ...overrides].flatMap((event) => [...attendeeAddresses(event)]),
+  );
   const organizer = organizerAddress(master);
   const added = newAttendees(
     add,
@@ -111,7 +114,7 @@ export const attendeeChanges = (
   if (Result.isFailure(added)) {
     return Result.fail(added.failure);
   }
-  const missing = remove.find((email) => !present.has(keyOf(email)));
+  const missing = remove.find((email) => !listed.has(keyOf(email)));
   return missing === undefined
     ? Result.succeed({
         added: added.success,
@@ -177,6 +180,18 @@ export const changeAttendees = (
     }
   }
   return changed;
+};
+
+// sabre/dav can leave SCHEDULE-FORCE-SEND stored in a changed occurrence
+// (RFC 6638, section 7.2), and writing it back makes the server send that
+// message again.
+export const clearForcedSends = (component: ICAL.Component): void => {
+  for (const property of [
+    ...component.getAllProperties('organizer'),
+    ...component.getAllProperties('attendee'),
+  ]) {
+    property.removeParameter('schedule-force-send');
+  }
 };
 
 // Asks the attendees to reply again, as after the organizer moved the event.

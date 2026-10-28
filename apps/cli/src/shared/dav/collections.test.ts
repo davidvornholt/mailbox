@@ -30,6 +30,20 @@ describe('findCollection', () => {
     expect(Result.getOrUndefined(found)?.name).toBe('Work');
   });
 
+  it.each([
+    ['/books/a%2Fb/', 'escaped'],
+    ['/books/a/b/', 'nested'],
+  ])('tells %s apart from another spelling of it', (href, name) => {
+    const found = findCollection(
+      [
+        { href: '/books/a/b/', name: 'nested' },
+        { href: '/books/a%2Fb/', name: 'escaped' },
+      ],
+      href,
+    );
+    expect(Result.getOrUndefined(found)?.name).toBe(name);
+  });
+
   it('finds a collection by its name, ignoring case', () => {
     const found = findCollection(collections, ' work ');
     expect(Result.getOrUndefined(found)?.href).toBe(

@@ -55,7 +55,7 @@ export const findAddressBook = (
           addressBook: wanted,
           message:
             reason === 'ambiguous'
-              ? `${account} has several address books named "${wanted}"; pass the href from "pim contacts books" instead`
+              ? `${account} has several address books that match "${wanted}"; pass an exact href from "pim contacts books" instead`
               : `${account} has no address book "${wanted}". Its address books: ${describeCollections(books)}`,
         }),
       ),

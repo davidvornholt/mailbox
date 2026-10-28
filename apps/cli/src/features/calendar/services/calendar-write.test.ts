@@ -173,6 +173,27 @@ describe('updateEvent', () => {
   });
 });
 
+describe('updateEvent on a server that changes the event', () => {
+  it('reads back an event the server changed as it stored it', async () => {
+    const { value } = await succeedsOnFakeDav(
+      {
+        ...eventRoutes(icsOf(...single)),
+        [`GET ${href}`]: [
+          { status: 200, body: icsOf(...single), headers: { etag: '"v1"' } },
+          {
+            status: 200,
+            body: icsOf(...single).replace('SUMMARY:Planning', 'SUMMARY:Kept'),
+            headers: { etag: '"v3"' },
+          },
+        ],
+        [`PUT ${href}`]: { status: 204 },
+      },
+      updateEvent(davAccount, target(), { title: 'Renamed' }, berlin),
+    );
+    expect(value).toMatchObject({ etag: '"v3"', summary: 'Kept' });
+  });
+});
+
 describe('deleteEvent', () => {
   it('deletes the version the caller read and asks the server not to notify anyone', async () => {
     const { value, requests } = await succeedsOnFakeDav(
