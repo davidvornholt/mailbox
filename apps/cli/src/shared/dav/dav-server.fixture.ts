@@ -1,4 +1,7 @@
+import { Effect } from 'effect';
+import type { Account } from '../accounts/account';
 import { type Fetch, makeDavClient } from './client';
+import { Dav } from './dav';
 
 const multiStatusCode = 207;
 const notFoundCode = 404;
@@ -84,3 +87,52 @@ export const discoveryRoutes: Readonly<Record<string, FakeReply>> = {
     ),
   },
 };
+
+// An account whose DAV server is the fake one.
+export const davAccount: Account = {
+  email: 'me@example.com',
+  name: 'Me',
+  host: 'imap.example.com',
+  port: 993,
+  secure: true,
+  user: 'me@example.com',
+  auth: 'password',
+  dav: { url: davLogin.url, user: davLogin.user },
+};
+
+type Routes = Readonly<Record<string, FakeReply>>;
+
+const onFakeDav = <A, E>(routes: Routes, effect: Effect.Effect<A, E, Dav>) => {
+  const { client, requests } = fakeDavServer(routes);
+  const dav = Dav.of({
+    client: () => Effect.succeed(client),
+    clientWith: () => Effect.succeed(client),
+  });
+  return { requests, effect: effect.pipe(Effect.provideService(Dav, dav)) };
+};
+
+// Runs the effect against a fake DAV server and returns its value with the
+// requests it made.
+export const succeedsOnFakeDav = async <A, E>(
+  routes: Routes,
+  effect: Effect.Effect<A, E, Dav>,
+) => {
+  const run = onFakeDav(routes, effect);
+  return { value: await Effect.runPromise(run.effect), requests: run.requests };
+};
+
+// Runs the effect against a fake DAV server and returns its error with the
+// requests it made.
+export const failsOnFakeDav = async <A, E>(
+  routes: Routes,
+  effect: Effect.Effect<A, E, Dav>,
+) => {
+  const run = onFakeDav(routes, effect);
+  return {
+    error: await Effect.runPromise(Effect.flip(run.effect)),
+    requests: run.requests,
+  };
+};
+
+export const writeRequests = (requests: ReadonlyArray<RecordedRequest>) =>
+  requests.filter(({ method }) => method === 'PUT' || method === 'DELETE');

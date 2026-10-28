@@ -27,6 +27,7 @@ describe('displayName', () => {
     [['FN:Ana Boss', 'N:Boss;Ana;;;'], 'Ana Boss'],
     [['N:Boss;Ana;Maria;Dr.;'], 'Dr. Ana Maria Boss'],
     [['ORG:Example GmbH;Sales'], 'Example GmbH, Sales'],
+    [['ORG:Example\\; Partner'], 'Example; Partner'],
     [['EMAIL:ana@example.com'], 'ana@example.com'],
   ])('names a contact from %p', (lines, name) => {
     expect(displayName(card(...lines))).toBe(name);

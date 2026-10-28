@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect } from 'effect';
-import type { Account } from '../../../shared/accounts/account';
-import { Dav } from '../../../shared/dav/dav';
 import {
+  davAccount,
   davResponse,
   discoveryRoutes,
   type FakeReply,
-  fakeDavServer,
+  failsOnFakeDav,
   multistatus,
-  type RecordedRequest,
+  succeedsOnFakeDav,
+  writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
 import {
   createEvent,
@@ -17,17 +16,6 @@ import {
   updateEvent,
 } from './calendar-write';
 import { berlin, icsOf, vevent, weeklySeries } from './ical.fixture';
-
-const account: Account = {
-  email: 'me@example.com',
-  name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'me@example.com',
-  auth: 'password',
-  dav: { url: 'https://dav.example.com/', user: 'me-dav' },
-};
 
 type Routes = Readonly<Record<string, FakeReply>>;
 
@@ -50,37 +38,6 @@ const calendarRoutes: Routes = {
   },
 };
 
-const provided = <A, E>(routes: Routes, effect: Effect.Effect<A, E, Dav>) => {
-  const { client, requests } = fakeDavServer(routes);
-  const dav = Dav.of({
-    client: () => Effect.succeed(client),
-    clientWith: () => Effect.succeed(client),
-  });
-  return { requests, effect: effect.pipe(Effect.provideService(Dav, dav)) };
-};
-
-const succeeds = async <A, E>(
-  routes: Routes,
-  effect: Effect.Effect<A, E, Dav>,
-) => {
-  const run = provided(routes, effect);
-  return { value: await Effect.runPromise(run.effect), requests: run.requests };
-};
-
-const fails = async <A, E>(
-  routes: Routes,
-  effect: Effect.Effect<A, E, Dav>,
-) => {
-  const run = provided(routes, effect);
-  return {
-    error: await Effect.runPromise(Effect.flip(run.effect)),
-    requests: run.requests,
-  };
-};
-
-const writes = (requests: ReadonlyArray<RecordedRequest>) =>
-  requests.filter(({ method }) => method === 'PUT' || method === 'DELETE');
-
 const newHref = /^\/calendars\/me\/work\/(?<uid>[0-9a-f-]{36})\.ics$/u;
 const scheduling = /ORGANIZER|ATTENDEE/u;
 
@@ -95,14 +52,14 @@ const trip = {
 
 describe('createEvent', () => {
   it('stores a new event that invites no one', async () => {
-    const { value, requests } = await succeeds(
+    const { value, requests } = await succeedsOnFakeDav(
       {
         ...calendarRoutes,
         'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
       },
-      createEvent(account, { calendar: 'Work', ...trip }, berlin),
+      createEvent(davAccount, { calendar: 'Work', ...trip }, berlin),
     );
-    const [put] = writes(requests);
+    const [put] = writeRequests(requests);
     const { uid } = newHref.exec(value.href)?.groups ?? {};
     expect(value).toEqual({
       account: 'me@example.com',
@@ -125,12 +82,12 @@ describe('createEvent', () => {
   });
 
   it('refuses a calendar the user may only read', async () => {
-    const { error, requests } = await fails(
+    const { error, requests } = await failsOnFakeDav(
       calendarRoutes,
-      createEvent(account, { calendar: 'Shared', ...trip }, berlin),
+      createEvent(davAccount, { calendar: 'Shared', ...trip }, berlin),
     );
     expect(error._tag).toBe('ReadOnlyCalendarError');
-    expect(writes(requests)).toEqual([]);
+    expect(writeRequests(requests)).toEqual([]);
   });
 });
 
@@ -174,12 +131,12 @@ const meeting = vevent(
 
 describe('updateEvent', () => {
   it('changes the version the caller read', async () => {
-    const { value, requests } = await succeeds(
+    const { value, requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...single)),
-      updateEvent(account, target(), { title: 'Planning, final' }, berlin),
+      updateEvent(davAccount, target(), { title: 'Planning, final' }, berlin),
     );
     expect(value).toMatchObject({ etag: '"v2"', summary: 'Planning, final' });
-    const [put] = writes(requests);
+    const [put] = writeRequests(requests);
     expect(put?.method).toBe('PUT');
     expect(put?.headers.get('if-match')).toBe('"v1"');
     expect(put?.body).toContain('SUMMARY:Planning\\, final');
@@ -211,29 +168,34 @@ describe('updateEvent', () => {
       'EventChangeError',
     ],
   ])('refuses %s', async (_name, routes, wanted, tag) => {
-    const { error, requests } = await fails(
+    const { error, requests } = await failsOnFakeDav(
       routes,
-      updateEvent(account, wanted, { title: 'Renamed' }, berlin),
+      updateEvent(davAccount, wanted, { title: 'Renamed' }, berlin),
     );
     expect(error).toMatchObject({ _tag: tag });
-    expect(writes(requests)).toEqual([]);
+    expect(writeRequests(requests)).toEqual([]);
   });
 
   it('renames a recurring event with --series', async () => {
-    const { value } = await succeeds(
+    const { value } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...weeklySeries)),
-      updateEvent(account, target({ series: true }), { title: 'Sync' }, berlin),
+      updateEvent(
+        davAccount,
+        target({ series: true }),
+        { title: 'Sync' },
+        berlin,
+      ),
     );
     expect(value.summary).toBe('Sync');
   });
 
   it('reports a change the server refused for its version', async () => {
-    const { error } = await fails(
+    const { error } = await failsOnFakeDav(
       {
         ...eventRoutes(icsOf(...single)),
         [`PUT ${href}`]: { status: 412 },
       },
-      updateEvent(account, target(), { title: 'Renamed' }, berlin),
+      updateEvent(davAccount, target(), { title: 'Renamed' }, berlin),
     );
     expect(error._tag).toBe('DavConflictError');
   });
@@ -241,24 +203,24 @@ describe('updateEvent', () => {
 
 describe('deleteEvent', () => {
   it('deletes the version the caller read and asks the server not to notify anyone', async () => {
-    const { value, requests } = await succeeds(
+    const { value, requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...single)),
-      deleteEvent(account, target(), berlin),
+      deleteEvent(davAccount, target(), berlin),
     );
     expect(value).toMatchObject({ href, summary: 'Planning' });
     expect(value).not.toHaveProperty('etag');
-    const [deletion] = writes(requests);
+    const [deletion] = writeRequests(requests);
     expect(deletion?.method).toBe('DELETE');
     expect(deletion?.headers.get('if-match')).toBe('"v1"');
     expect(deletion?.headers.get('schedule-reply')).toBe('F');
   });
 
   it('refuses a meeting with guests', async () => {
-    const { error, requests } = await fails(
+    const { error, requests } = await failsOnFakeDav(
       eventRoutes(icsOf(...meeting)),
-      deleteEvent(account, target(), berlin),
+      deleteEvent(davAccount, target(), berlin),
     );
     expect(error._tag).toBe('EventHasAttendeesError');
-    expect(writes(requests)).toEqual([]);
+    expect(writeRequests(requests)).toEqual([]);
   });
 });

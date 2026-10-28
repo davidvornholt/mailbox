@@ -2,7 +2,7 @@
 
 > Built on [davidvornholt/standards](https://github.com/davidvornholt/standards).
 
-`pim` is a command-line tool for AI agents to work with a person's information. Its `mail` commands search, read, and draft email in IMAP accounts. It works with any IMAP server that accepts a password or app password, and with Outlook.com and Microsoft 365 accounts through Microsoft sign-in. It never sends mail: drafts go to the account's drafts folder, where you review and send them from your mail client. Its `calendar` commands read calendars over CalDAV and create, change, and delete events without attendees, so they invite no one. Its `contacts` commands read address books over CardDAV.
+`pim` is a command-line tool for AI agents to work with a person's information. Its `mail` commands search, read, and draft email in IMAP accounts. It works with any IMAP server that accepts a password or app password, and with Outlook.com and Microsoft 365 accounts through Microsoft sign-in. It never sends mail: drafts go to the account's drafts folder, where you review and send them from your mail client. Its `calendar` commands read calendars over CalDAV and create, change, and delete events without attendees, so they invite no one. Its `contacts` commands read address books over CardDAV and create, change, and delete contacts.
 
 ## Install
 

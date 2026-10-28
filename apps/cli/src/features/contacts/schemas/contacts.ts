@@ -3,6 +3,7 @@ export type AddressBook = {
   readonly href: string;
   readonly name: string;
   readonly description?: string;
+  readonly writable?: boolean;
 };
 
 export type ContactSummary = {

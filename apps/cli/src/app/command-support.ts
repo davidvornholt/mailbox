@@ -8,7 +8,9 @@ import type {
 } from '../features/calendar/errors/errors';
 import type {
   AddressBookNotFoundError,
+  ContactChangeError,
   ContactDataError,
+  ReadOnlyAddressBookError,
 } from '../features/contacts/errors/errors';
 import type { MailError } from '../features/mail/errors/errors';
 import type { Imap } from '../features/mail/services/imap';
@@ -57,6 +59,8 @@ export type CommandError =
   | EventChangeError
   | ContactDataError
   | AddressBookNotFoundError
+  | ReadOnlyAddressBookError
+  | ContactChangeError
   | UsageError
   | FileError;
 
