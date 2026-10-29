@@ -212,7 +212,7 @@ describe('invitations of an account with only Outlook calendars', () => {
       expect(error).toMatchObject({
         _tag: 'InvitationError',
         message:
-          'Outlook puts the invitations of me@example.com into its calendar itself. Find the meeting with "pim calendar events --account me@example.com" and answer it with "pim calendar respond --account me@example.com --href <href>"',
+          'Outlook puts the invitations of me@example.com into its calendar itself. Find the meeting with "pim calendar events --account me@example.com" and answer it with "pim calendar respond --account me@example.com --href <href> --partstat <accepted|tentative|declined>"',
       });
       expect(requests).toEqual([]);
     }

@@ -279,7 +279,7 @@ export const updateOutlookEvent = (
       return yield* othersMeeting(
         event,
         'change',
-        'Answer it with "pim calendar respond --href"',
+        `Answer it with "pim calendar respond --account ${client.account} --href ${event.id} --partstat <accepted|tentative|declined>"`,
       );
     }
     const guests = yield* changedGuests(event, changes);

@@ -100,6 +100,6 @@ export const outlookInvitation = (
     ? Effect.void
     : Effect.fail(
         new InvitationError({
-          message: `Outlook puts the invitations of ${account.email} into its calendar itself. Find the meeting with "pim calendar events --account ${account.email}" and answer it with "pim calendar respond --account ${account.email} --href <href>"`,
+          message: `Outlook puts the invitations of ${account.email} into its calendar itself. Find the meeting with "pim calendar events --account ${account.email}" and answer it with "pim calendar respond --account ${account.email} --href <href> --partstat <accepted|tentative|declined>"`,
         }),
       );
