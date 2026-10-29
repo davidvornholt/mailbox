@@ -103,6 +103,7 @@ const answeredMeeting = (values: {
   readonly folder: string | undefined;
   readonly uid: number | undefined;
   readonly calendar: string | undefined;
+  readonly series: boolean;
 }) => {
   const { href, folder, uid } = values;
   if (href !== undefined) {
@@ -115,6 +116,13 @@ const answeredMeeting = (values: {
             '--href answers an Outlook meeting and takes no --folder, --uid, or --calendar',
           ),
         );
+  }
+  if (values.series) {
+    return Effect.fail(
+      respondUsage(
+        '--series answers a recurring Outlook meeting and needs --href; an invitation email says itself which occurrences it is for',
+      ),
+    );
   }
   return folder === undefined || uid === undefined
     ? Effect.fail(
@@ -130,7 +138,7 @@ const respond = defineCommand(
     name: 'calendar respond',
     summary: 'Answer an invitation',
     description:
-      'Answer a meeting someone else organizes, as the attendee. Outlook puts invitations into its calendar itself: --href answers such a meeting from "pim calendar events", keeps the answer in the calendar, and makes Microsoft email the organizer only with --notify-organizer. It prints {"reply": "server" or "none", "event"}, without event when Microsoft removed the declined meeting from the calendar. --folder and --uid answer an invitation email (method request). For an account with a dav table whose server sends answers itself (RFC 6638), pim first brings the meeting in the calendar up to date with the invitation as "pim calendar import" does, and then gives the answer there, which makes the server email the organizer; pim does this only with --notify-organizer. An invitation for single occurrences answers only those. It prints {"reply": "server", "event"}, where event.organizer.scheduleStatus tells, when the server reports it, how it delivered the answer (1.x: sent or pending). For an account with only a graph table, pim points to --href. For any other account, pim saves the answer as a reply draft to the organizer, with the calendar data their calendar reads, and prints {"reply": "draft", "draft", "to", "subject"}. The user sends the draft from their mail app; pim writes no calendar then.',
+      'Answer a meeting someone else organizes, as the attendee. Outlook puts invitations into its calendar itself: --href answers such a meeting from "pim calendar events", which names one occurrence of a recurring meeting, or with --series its seriesHref from "pim calendar get"; pim keeps the answer in the calendar and makes Microsoft email the organizer only with --notify-organizer. It prints {"reply": "server" or "none", "event"}, without event when Microsoft removed the declined meeting from the calendar. --folder and --uid answer an invitation email (method request). For an account with a dav table whose server sends answers itself (RFC 6638), pim first brings the meeting in the calendar up to date with the invitation as "pim calendar import" does, and then gives the answer there, which makes the server email the organizer; pim does this only with --notify-organizer. An invitation for single occurrences answers only those. It prints {"reply": "server", "event"}, where event.organizer.scheduleStatus tells, when the server reports it, how it delivered the answer (1.x: sent or pending). For an account with only a graph table, pim points to --href. For any other account, pim saves the answer as a reply draft to the organizer, with the calendar data their calendar reads, and prints {"reply": "draft", "draft", "to", "subject"}. The user sends the draft from their mail app; pim writes no calendar then.',
     flags: {
       account: messageFlags.account,
       href: flag.optionalText(
@@ -140,6 +148,9 @@ const respond = defineCommand(
       folder: flag.optionalText('path', 'Folder of the invitation email'),
       uid: flag.optionalInteger('n', 'Uid of the invitation email'),
       partstat: flag.text(partstats.join('|'), 'The answer'),
+      series: flag.switch(
+        'Allow the answer for every occurrence of a recurring Outlook meeting',
+      ),
       calendar: calendarFlag,
       notifyOrganizer: flag.switch(
         'Allow the answer that makes the calendar server email the organizer. Pass it only when the user asked to answer',
@@ -162,6 +173,7 @@ const respond = defineCommand(
           {
             href: meeting.href,
             partstat,
+            series: values.series,
             notifyOrganizer: values.notifyOrganizer,
           },
           DateTime.zoneMakeLocal(),

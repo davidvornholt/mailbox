@@ -19,6 +19,8 @@ const actions: Readonly<Record<Partstat, string>> = {
 export type OutlookAnswer = {
   readonly href: string;
   readonly partstat: Partstat;
+  // Allows answering every occurrence of a recurring meeting.
+  readonly series: boolean;
   // Lets Microsoft email the organizer the answer.
   readonly notifyOrganizer: boolean;
 };
@@ -45,6 +47,11 @@ export const answerOutlookEvent = (
     if (event.isOrganizer !== false) {
       return yield* new InvitationError({
         message: `${client.account} organizes ${href}, so there is no invitation to answer`,
+      });
+    }
+    if (event.type === 'seriesMaster' && !answer.series) {
+      return yield* new InvitationError({
+        message: `${href} is a recurring meeting, so this answers every occurrence. Pass --series if that is intended`,
       });
     }
     yield* client.send(

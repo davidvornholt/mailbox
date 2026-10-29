@@ -35,6 +35,7 @@ const invited = {
 const answer: OutlookAnswer = {
   href: 'event-1',
   partstat: 'accepted',
+  series: false,
   notifyOrganizer: false,
 };
 
@@ -84,15 +85,26 @@ describe('answerOutlookEvent', () => {
     });
   });
 
-  it('answers no meeting the user organizes', async () => {
-    const { client, requests } = fakeGraph({
-      '/me/events/event-1': { ...invited, isOrganizer: true },
-    });
-    const error = await Effect.runPromise(
-      Effect.flip(answerOutlookEvent(client, answer, berlin)),
+  it('answers no meeting the user organizes, and a series only with series', async () => {
+    const refusals = await Promise.all(
+      [
+        { ...invited, isOrganizer: true },
+        { ...invited, type: 'seriesMaster' },
+      ].map(async (event) => {
+        const { client, requests } = fakeGraph({ '/me/events/event-1': event });
+        const error = await Effect.runPromise(
+          Effect.flip(answerOutlookEvent(client, answer, berlin)),
+        );
+        return [
+          error._tag,
+          requests.filter(({ method }) => method !== undefined),
+        ];
+      }),
     );
-    expect(error._tag).toBe('InvitationError');
-    expect(requests.filter(({ method }) => method !== undefined)).toEqual([]);
+    expect(refusals).toEqual([
+      ['InvitationError', []],
+      ['InvitationError', []],
+    ]);
   });
 });
 
