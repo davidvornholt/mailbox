@@ -8,6 +8,7 @@ import {
   type CalendarNotFoundError,
   EventChangeError,
   EventHasAttendeesError,
+  type OutlookReadOnlyError,
   ReadOnlyCalendarError,
   type SchedulingUnsupportedError,
 } from '../errors/errors';
@@ -41,6 +42,7 @@ import {
   isRecurring,
   newEventIcs,
 } from './event-write';
+import { refuseOutlookWrite } from './read-only';
 import {
   invitingOrganizer,
   meetingOrganizer,
@@ -54,7 +56,8 @@ export type CalendarWriteError =
   | ReadOnlyCalendarError
   | EventHasAttendeesError
   | EventChangeError
-  | SchedulingUnsupportedError;
+  | SchedulingUnsupportedError
+  | OutlookReadOnlyError;
 
 export type StoredEvent = {
   readonly account: string;
@@ -172,6 +175,7 @@ export const createEvent = (
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail, CalendarWriteError, Dav> =>
   Effect.gen(function* () {
+    yield* refuseOutlookWrite(account);
     const dav = yield* Dav;
     const client = yield* dav.client(account);
     const calendars = yield* listCalendars(client);
@@ -286,6 +290,7 @@ export const updateEvent = (
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail, CalendarWriteError, Dav> =>
   Effect.gen(function* () {
+    yield* refuseOutlookWrite(account, target.href);
     const { href, etag } = target;
     const dav = yield* Dav;
     const client = yield* dav.client(account);
@@ -358,6 +363,7 @@ export const deleteEvent = (
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail, CalendarWriteError, Dav> =>
   Effect.gen(function* () {
+    yield* refuseOutlookWrite(account, target.href);
     const dav = yield* Dav;
     const client = yield* dav.client(account);
     const { resource, object } = yield* currentEvent(client, target);

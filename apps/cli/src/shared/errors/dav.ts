@@ -7,14 +7,6 @@ export class DavNotConfiguredError extends Schema.TaggedError<DavNotConfiguredEr
   },
 ) {}
 
-// Raised when a command across all DAV accounts fails for every one of them.
-export class DavAccountsError extends Schema.TaggedError<DavAccountsError>()(
-  'DavAccountsError',
-  {
-    message: Schema.String,
-  },
-) {}
-
 export class DavAuthError extends Schema.TaggedError<DavAuthError>()(
   'DavAuthError',
   {

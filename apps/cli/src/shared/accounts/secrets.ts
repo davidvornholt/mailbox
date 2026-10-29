@@ -4,8 +4,9 @@ import { KeyringError, MissingCredentialsError } from '../errors/accounts';
 import { keyringService } from './account';
 
 // What a stored credential logs in to. mail is the IMAP password, or the
-// refresh token of a Microsoft sign-in; dav is the CalDAV and CardDAV password.
-export type CredentialKind = 'mail' | 'dav';
+// refresh token of a Microsoft sign-in; dav is the CalDAV and CardDAV password;
+// graph is the refresh token of the Microsoft sign-in for Outlook calendars.
+export type CredentialKind = 'mail' | 'dav' | 'graph';
 
 // Each credential lives in the keyring under <kind>:<email>.
 const entry = (kind: CredentialKind, account: string): Entry =>

@@ -1,6 +1,6 @@
 import { Effect, Result } from 'effect';
 import type { Account } from '../../../shared/accounts/account';
-import type { AccountFailure } from '../../../shared/dav/accounts';
+import type { AccountFailure } from '../../../shared/accounts/across';
 import {
   describeCollections,
   findCollection,

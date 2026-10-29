@@ -2,8 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import {
   KeyringError,
   MissingCredentialsError,
+  OAuthError,
 } from '../../../shared/errors/accounts';
-import { ImapError, OAuthError } from '../errors/errors';
+import { ImapError } from '../errors/errors';
 import { statusFromError } from './status';
 
 describe('statusFromError', () => {

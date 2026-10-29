@@ -4,6 +4,7 @@ import {
   accountEvent,
   accountEvents,
   byStart,
+  calendarAccounts,
 } from '../features/calendar/services/calendar';
 import {
   addDays,
@@ -14,9 +15,9 @@ import {
   today,
 } from '../features/calendar/services/calendar-dates';
 import { localDayWindow } from '../features/calendar/services/ical-time';
+import { acrossAccounts } from '../shared/accounts/across';
 import { AccountConfig } from '../shared/accounts/config';
 import { defineCommand, flag, UsageError } from '../shared/command-line';
-import { acrossAccounts, davAccounts } from '../shared/dav/accounts';
 import { type CommandEffect, json } from './command-support';
 
 const defaultEventDays = 7;
@@ -45,14 +46,14 @@ const list = defineCommand(
     name: 'calendar list',
     summary: 'List calendars',
     description:
-      'List the calendars of every account with [accounts.dav], or of one account. Accounts that fail are listed under "failures".',
+      'List the calendars of every account with [accounts.dav] or [accounts.graph], or of one account. Outlook calendars from [accounts.graph] include those shared with the user, and pim only reads them. Accounts that fail are listed under "failures".',
     flags: {
       account: flag.optionalText('email', 'List only this account'),
     },
   },
   (values): CommandEffect =>
     Effect.gen(function* () {
-      const accounts = yield* davAccounts(values.account);
+      const accounts = yield* calendarAccounts(values.account);
       const { results, failures } = yield* acrossAccounts(
         accounts,
         accountCalendars,
@@ -79,7 +80,7 @@ const events = defineCommand(
       ),
       query: flag.optionalText(
         'text',
-        'Match the title, location, and description',
+        'Match the title, location, and description (for Outlook, the start of the description)',
       ),
       limit: flag.optionalInteger(
         'n',
@@ -112,7 +113,7 @@ const events = defineCommand(
           message: 'pim calendar events: --to is before --from',
         });
       }
-      const accounts = yield* davAccounts(values.account);
+      const accounts = yield* calendarAccounts(values.account);
       const { results, failures } = yield* acrossAccounts(accounts, (account) =>
         accountEvents(
           account,
@@ -145,11 +146,13 @@ const get = defineCommand(
     name: 'calendar get',
     summary: 'Show one event',
     description:
-      'Show an event with its description, organizer, attendees, and, for a recurring event, its rule and the occurrences that differ from it. The etag identifies this version of the event.',
+      'Show an event with its description, organizer, attendees, and, for a recurring event, its rule and the occurrences that differ from it. The etag identifies this version of a CalDAV event. An Outlook event is the occurrence its href names, with the rule of its series.',
     flags: {
       account: flag.text('email', 'Account from "pim calendar events"'),
       href: flag.text('href', 'Event href from "pim calendar events"'),
-      raw: flag.switch('Include the iCalendar text as "ics"'),
+      raw: flag.switch(
+        'Include the iCalendar text as "ics" (CalDAV events only)',
+      ),
     },
   },
   (values): CommandEffect =>
@@ -161,7 +164,9 @@ const get = defineCommand(
         values.href,
         DateTime.zoneMakeLocal(),
       );
-      return json(values.raw ? { ...detail, ics } : detail);
+      return json(
+        values.raw && ics !== undefined ? { ...detail, ics } : detail,
+      );
     }),
 );
 

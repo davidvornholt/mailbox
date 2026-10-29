@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from 'effect';
 import { AccountConfig } from '../../../shared/accounts/config';
 import { Secrets } from '../../../shared/accounts/secrets';
+import { MicrosoftAuth } from '../../../shared/microsoft/auth';
 import type { MailError } from '../errors/errors';
 import type {
   AttachmentContent,
@@ -39,8 +40,7 @@ import {
 import { listFolders, readMessage } from './imap-ops';
 import { searchMailboxes } from './imap-search';
 import { makeWarmClientCache } from './imap-warm-cache';
-import { imapLoginFor } from './login';
-import { MicrosoftAuth } from './microsoft-auth';
+import { imapApp, imapLoginFor } from './login';
 
 export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
   account: string,
@@ -71,7 +71,8 @@ const makeConnections = Effect.gen(function* () {
     get: (email: string) => secrets.getCredential('mail', email),
     store: (email: string, credential: string) =>
       secrets.setCredential('mail', email, credential),
-    refresh: microsoft.refresh,
+    refresh: (email: string, refreshToken: string) =>
+      microsoft.refresh(imapApp, email, refreshToken),
   } as const;
   const { clientFor, closeAll } = yield* makeWarmClientCache((email: string) =>
     Effect.gen(function* () {

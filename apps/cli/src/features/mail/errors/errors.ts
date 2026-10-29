@@ -3,14 +3,11 @@ import type {
   ConfigError,
   KeyringError,
   MissingCredentialsError,
+  OAuthError,
   UnknownAccountError,
 } from '../../../shared/errors/accounts';
 
 export class ImapError extends Schema.TaggedError<ImapError>()('ImapError', {
-  message: Schema.String,
-}) {}
-
-export class OAuthError extends Schema.TaggedError<OAuthError>()('OAuthError', {
   message: Schema.String,
 }) {}
 

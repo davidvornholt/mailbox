@@ -116,7 +116,7 @@ const toCalendarResource = (
 // hours; the server range is that much wider, and occurrencesIn keeps the
 // exact window.
 const floatingHours = 26;
-const floatingMs = Duration.toMillis(Duration.hours(floatingHours));
+export const floatingMs = Duration.toMillis(Duration.hours(floatingHours));
 
 // The calendar objects with an event in the window; the server expands
 // recurring events to decide. Objects the server could not return fail.

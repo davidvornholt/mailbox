@@ -2,15 +2,19 @@ import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import { Imap } from '../features/mail/services/imap';
 import type { ImapLogin } from '../features/mail/services/imap-client';
-import {
-  type DeviceCode,
-  MicrosoftAuth,
-  type MicrosoftTokens,
-} from '../features/mail/services/microsoft-auth';
 import type { Account } from '../shared/accounts/account';
 import { type CredentialKind, Secrets } from '../shared/accounts/secrets';
 import { type Fetch, makeDavClient } from '../shared/dav/client';
 import { Dav } from '../shared/dav/dav';
+import { pimClientId } from '../shared/graph/app';
+import { type GraphFetch, makeGraphClient } from '../shared/graph/client';
+import { Graph } from '../shared/graph/graph';
+import {
+  type DeviceCode,
+  type MicrosoftApp,
+  MicrosoftAuth,
+  type MicrosoftTokens,
+} from '../shared/microsoft/auth';
 import type { HiddenPromptResult } from '../shared/terminal';
 import { loginAccounts, loginSteps } from './cli-login';
 
@@ -27,6 +31,11 @@ const accountFor = (email: string, auth: Account['auth']): Account => ({
 const davAccount: Account = {
   ...accountFor('me@example.com', 'password'),
   dav: { url: 'https://dav.example.com/', user: 'me-dav' },
+};
+
+const graphAccount: Account = {
+  ...accountFor('me@example.com', 'password'),
+  graph: { clientId: pimClientId },
 };
 
 const principalReply = `<?xml version="1.0"?>
@@ -51,12 +60,15 @@ const runLogin = async (
     readonly signIn?: Effect.Effect<MicrosoftTokens>;
     readonly only?: CredentialKind;
     readonly davStatus?: number;
+    readonly graphStatus?: number;
   },
 ) => {
   const prompts: Array<string> = [];
   const verified: Array<ImapLogin> = [];
   const stored: Array<string> = [];
   const davLogins: Array<string | null> = [];
+  const graphLogins: Array<string | null> = [];
+  const apps: Array<string> = [];
   const prompt = (question: string): Effect.Effect<HiddenPromptResult> =>
     Effect.sync(() => prompts.push(question)).pipe(
       Effect.andThen(options.answer),
@@ -93,8 +105,22 @@ const runLogin = async (
         ),
       ),
   } as unknown as typeof Dav.Service;
+  const graphFetch: GraphFetch = (_url, init) => {
+    graphLogins.push(init.headers.authorization ?? null);
+    return Promise.resolve(
+      Response.json({ value: [] }, { status: options.graphStatus ?? 200 }),
+    );
+  };
+  const graph = {
+    clientWith: (account: Account, accessToken: string) =>
+      makeGraphClient({ account: account.email, accessToken }, graphFetch),
+  } as unknown as typeof Graph.Service;
   const microsoft = {
-    requestDeviceCode: Effect.succeed(device),
+    requestDeviceCode: (app: MicrosoftApp) =>
+      Effect.sync(() => {
+        apps.push(`${app.credential} ${app.clientId}`);
+        return device;
+      }),
     awaitSignIn: () => options.signIn ?? Effect.never,
   } as unknown as typeof MicrosoftAuth.Service;
 
@@ -104,9 +130,10 @@ const runLogin = async (
       Effect.provideService(Secrets, secrets),
       Effect.provideService(MicrosoftAuth, microsoft),
       Effect.provideService(Dav, dav),
+      Effect.provideService(Graph, graph),
     ),
   );
-  return { succeeded, prompts, verified, stored, davLogins };
+  return { succeeded, prompts, verified, stored, davLogins, graphLogins, apps };
 };
 
 describe('loginAccounts', () => {
@@ -183,6 +210,63 @@ describe('loginAccounts', () => {
   });
 });
 
+describe('loginAccounts for Outlook calendars', () => {
+  const signIn = Effect.succeed({
+    accessToken: 'graph-access',
+    refreshToken: 'graph-refresh',
+  });
+
+  it("signs in with pim's app, checks Microsoft Graph, and stores the refresh token", async () => {
+    const result = await runLogin([graphAccount], {
+      answer: Effect.never,
+      signIn,
+      only: 'graph',
+    });
+
+    expect(result.apps).toEqual([`graph ${pimClientId}`]);
+    expect(result.prompts).toEqual([
+      'Sign in to Microsoft for the Outlook calendars of me@example.com: open https://login.microsoft.com/device and enter the code ABCD1234\nWaiting for sign-in (press Enter to skip): ',
+    ]);
+    expect(result.graphLogins).toEqual(['Bearer graph-access']);
+    expect(result.stored).toEqual(['graph:graph-refresh']);
+    expect(result.succeeded).toBeTrue();
+  });
+
+  it("signs in mail with the IMAP app and Outlook calendars with the account's client-id", async () => {
+    const result = await runLogin(
+      [
+        {
+          ...graphAccount,
+          auth: 'microsoft',
+          graph: { clientId: '00000000-0000-4000-8000-000000000003' },
+        },
+      ],
+      { answer: Effect.never, signIn },
+    );
+
+    expect(result.apps).toEqual([
+      'mail 9e5f94bc-e8a4-4e73-b8be-63364c29d753',
+      'graph 00000000-0000-4000-8000-000000000003',
+    ]);
+    expect(result.stored).toEqual([
+      'mail:graph-refresh',
+      'graph:graph-refresh',
+    ]);
+  });
+
+  it('does not store a sign-in Microsoft Graph rejects', async () => {
+    const result = await runLogin([graphAccount], {
+      answer: Effect.never,
+      signIn,
+      only: 'graph',
+      graphStatus: 401,
+    });
+
+    expect(result.stored).toEqual([]);
+    expect(result.succeeded).toBeFalse();
+  });
+});
+
 describe('loginSteps', () => {
   const mailOnly = accountFor('mail@example.com', 'password');
 
@@ -196,6 +280,25 @@ describe('loginSteps', () => {
       'me@example.com mail',
       'me@example.com dav',
     ]);
+  });
+
+  it('adds Outlook calendars for accounts with [accounts.graph]', () => {
+    expect(
+      loginSteps(
+        [mailOnly, { ...davAccount, ...graphAccount, dav: davAccount.dav }],
+        undefined,
+      ).map(({ account, service }) => `${account.email} ${service}`),
+    ).toEqual([
+      'mail@example.com mail',
+      'me@example.com mail',
+      'me@example.com dav',
+      'me@example.com graph',
+    ]);
+    expect(
+      loginSteps([mailOnly, graphAccount], 'graph').map(
+        ({ account }) => account.email,
+      ),
+    ).toEqual(['me@example.com']);
   });
 
   it('limits the steps to one kind with only', () => {

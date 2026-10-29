@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import type { Account } from '../accounts/account';
-import { MissingCredentialsError } from '../errors/accounts';
-import { DavAuthError, DavError } from '../errors/dav';
-import { acrossAccounts } from './accounts';
-import { davStatusFromError } from './status';
+import { DavError } from '../errors/dav';
+import type { Account } from './account';
+import { acrossAccounts } from './across';
 
 const accountFor = (email: string): Account => ({
   email,
@@ -58,47 +56,9 @@ describe('acrossAccounts', () => {
         ),
       ),
     );
-    expect(error._tag).toBe('DavAccountsError');
+    expect(error._tag).toBe('AccountsError');
     expect(error.message).toContain(
       'bad2@example.com: bad2@example.com is down',
     );
-  });
-});
-
-describe('davStatusFromError', () => {
-  it('asks for a DAV login when the keyring has no password', () => {
-    const status = davStatusFromError(
-      'a@example.com',
-      new MissingCredentialsError({
-        account: 'a@example.com',
-        message: 'none',
-      }),
-    );
-    expect(status).toMatchObject({
-      service: 'dav',
-      ok: false,
-      state: 'no-credentials',
-    });
-    expect(status.message).toContain(
-      'pim login --account a@example.com --only dav',
-    );
-  });
-
-  it('reports a rejected login as unauthenticated', () => {
-    const status = davStatusFromError(
-      'a@example.com',
-      new DavAuthError({ account: 'a@example.com', message: 'rejected' }),
-    );
-    expect(status).toMatchObject({
-      state: 'unauthenticated',
-      message: 'rejected',
-    });
-  });
-
-  it('reports other failures as errors', () => {
-    expect(
-      davStatusFromError('a@example.com', new DavError({ message: 'down' }))
-        .state,
-    ).toBe('error');
   });
 });

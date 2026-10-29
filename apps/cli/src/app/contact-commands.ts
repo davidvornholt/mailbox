@@ -4,9 +4,10 @@ import {
   accountContact,
   accountContacts,
 } from '../features/contacts/services/contacts';
+import { acrossAccounts } from '../shared/accounts/across';
 import { AccountConfig } from '../shared/accounts/config';
 import { defineCommand, flag, UsageError } from '../shared/command-line';
-import { acrossAccounts, davAccounts } from '../shared/dav/accounts';
+import { davAccounts } from '../shared/dav/accounts';
 import { type CommandEffect, json } from './command-support';
 
 const defaultContactLimit = 50;

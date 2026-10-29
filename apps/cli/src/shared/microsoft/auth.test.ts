@@ -2,13 +2,22 @@ import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import {
   type DeviceCode,
+  freshAccessToken,
+  type MicrosoftApp,
+  type MicrosoftTokens,
   makeMicrosoftAuth,
   type PostForm,
-} from './microsoft-auth';
+} from './auth';
 
 type Reply = { readonly status: number; readonly body: string };
 type Call = { readonly url: string; readonly form: URLSearchParams };
 type Field = readonly [name: string, value: string | number];
+
+const app: MicrosoftApp = {
+  clientId: '00000000-0000-4000-8000-000000000001',
+  scope: 'https://graph.microsoft.com/Calendars.Read offline_access',
+  credential: 'graph',
+};
 
 const accessTokenLifetimeSeconds = 3600;
 const deviceCodeLifetimeSeconds = 900;
@@ -68,7 +77,7 @@ const failureMessage = (effect: Effect.Effect<unknown, { message: string }>) =>
   Effect.runPromise(Effect.flip(effect)).then((error) => error.message);
 
 describe('requestDeviceCode', () => {
-  it('asks for IMAP access with a refresh token and defaults the interval', async () => {
+  it("asks for the app's access and defaults the interval", async () => {
     const { calls, auth } = replying({
       status: 200,
       body: json(
@@ -79,7 +88,7 @@ describe('requestDeviceCode', () => {
       ),
     });
 
-    expect(await Effect.runPromise(auth.requestDeviceCode)).toEqual({
+    expect(await Effect.runPromise(auth.requestDeviceCode(app))).toEqual({
       ...device,
       intervalSeconds: 5,
       expiresInSeconds: deviceCodeLifetimeSeconds,
@@ -88,11 +97,8 @@ describe('requestDeviceCode', () => {
       {
         url: 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode',
         form: [
-          ['client_id', '9e5f94bc-e8a4-4e73-b8be-63364c29d753'],
-          [
-            'scope',
-            'https://outlook.office.com/IMAP.AccessAsUser.All offline_access',
-          ],
+          ['client_id', app.clientId],
+          ['scope', app.scope],
         ],
       },
     ]);
@@ -108,7 +114,7 @@ describe('awaitSignIn', () => {
     ];
     const { calls, auth } = replying(...replies);
 
-    expect(await Effect.runPromise(auth.awaitSignIn(device))).toEqual({
+    expect(await Effect.runPromise(auth.awaitSignIn(app, device))).toEqual({
       accessToken: 'access',
       refreshToken: 'refresh',
     });
@@ -124,7 +130,7 @@ describe('awaitSignIn', () => {
       rejection('authorization_declined', 'AADSTS70000: The user declined.'),
     );
 
-    expect(await failureMessage(auth.awaitSignIn(device))).toBe(
+    expect(await failureMessage(auth.awaitSignIn(app, device))).toBe(
       'Microsoft sign-in failed: AADSTS70000: The user declined.',
     );
   });
@@ -132,7 +138,7 @@ describe('awaitSignIn', () => {
   it('fails when Microsoft returns no refresh token', async () => {
     const { auth } = replying(tokens(['access_token', 'access']));
 
-    expect(await failureMessage(auth.awaitSignIn(device))).toContain(
+    expect(await failureMessage(auth.awaitSignIn(app, device))).toContain(
       'no refresh token',
     );
   });
@@ -145,17 +151,19 @@ describe('refresh', () => {
     );
 
     expect(
-      await Effect.runPromise(auth.refresh('me@outlook.com', 'current')),
+      await Effect.runPromise(auth.refresh(app, 'me@example.com', 'current')),
     ).toEqual({ accessToken: 'access', refreshToken: 'rotated' });
     expect(calls[0]?.form.get('grant_type')).toBe('refresh_token');
+    expect(calls[0]?.form.get('client_id')).toBe(app.clientId);
     expect(calls[0]?.form.get('refresh_token')).toBe('current');
+    expect(calls[0]?.form.get('scope')).toBe(app.scope);
   });
 
   it('keeps the current refresh token when Microsoft omits a new one', async () => {
     const { auth } = replying(tokens(['access_token', 'access']));
 
     expect(
-      await Effect.runPromise(auth.refresh('me@outlook.com', 'current')),
+      await Effect.runPromise(auth.refresh(app, 'me@example.com', 'current')),
     ).toEqual({ accessToken: 'access', refreshToken: 'current' });
   });
 
@@ -165,9 +173,9 @@ describe('refresh', () => {
     );
 
     expect(
-      await failureMessage(auth.refresh('me@outlook.com', 'current')),
+      await failureMessage(auth.refresh(app, 'me@example.com', 'current')),
     ).toBe(
-      'Microsoft rejected the stored sign-in for me@outlook.com: AADSTS70008: The refresh token has expired. Ask the user to run: pim login --account me@outlook.com --only mail',
+      'Microsoft rejected the stored sign-in for me@example.com: AADSTS70008: The refresh token has expired. Ask the user to run: pim login --account me@example.com --only graph',
     );
   });
 
@@ -178,7 +186,7 @@ describe('refresh', () => {
     });
 
     expect(
-      await failureMessage(auth.refresh('me@outlook.com', 'current')),
+      await failureMessage(auth.refresh(app, 'me@example.com', 'current')),
     ).toBe('Microsoft sign-in failed with HTTP 503.');
   });
 
@@ -186,7 +194,34 @@ describe('refresh', () => {
     const { auth } = replying();
 
     expect(
-      await failureMessage(auth.refresh('me@outlook.com', 'current')),
+      await failureMessage(auth.refresh(app, 'me@example.com', 'current')),
     ).toBe('Microsoft sign-in request failed: Error: network down');
+  });
+});
+
+describe('freshAccessToken', () => {
+  const trading = (refreshToken: string) => {
+    const stored: Array<string> = [];
+    const token = freshAccessToken('current', {
+      refresh: (current): Effect.Effect<MicrosoftTokens> =>
+        Effect.succeed({ accessToken: `access for ${current}`, refreshToken }),
+      store: (rotated) =>
+        Effect.sync(() => {
+          stored.push(rotated);
+        }),
+    });
+    return { stored, token };
+  };
+
+  it('stores a rotated refresh token', async () => {
+    const { stored, token } = trading('rotated');
+    expect(await Effect.runPromise(token)).toBe('access for current');
+    expect(stored).toEqual(['rotated']);
+  });
+
+  it('leaves the keyring alone when the refresh token stays the same', async () => {
+    const { stored, token } = trading('current');
+    expect(await Effect.runPromise(token)).toBe('access for current');
+    expect(stored).toEqual([]);
   });
 });

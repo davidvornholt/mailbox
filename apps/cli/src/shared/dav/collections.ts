@@ -34,7 +34,7 @@ export const serverPath = (href: string): string =>
 export const lastSegment = (href: string): string =>
   decodePercent(href.replace(trailingSlashes, '').split('/').at(-1) ?? href);
 
-const onlyOne = <C>(
+export const onlyOne = <C>(
   matches: ReadonlyArray<C>,
 ): Result.Result<C, 'ambiguous' | 'missing'> => {
   const [found] = matches;

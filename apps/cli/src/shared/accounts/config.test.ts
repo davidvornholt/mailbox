@@ -57,6 +57,19 @@ describe('AccountConfig', () => {
     );
   });
 
+  it('reads an [accounts.graph] table with its client-id', async () => {
+    const path = `${tempDir}/graph.toml`;
+    await Bun.write(
+      path,
+      '[[accounts]]\nemail = "a@example.com"\nname = "A"\nhost = "imap.example.com"\n\n[accounts.graph]\nclient-id = "00000000-0000-4000-8000-000000000003"\n',
+    );
+    Bun.env.PIM_CONFIG = path;
+    expect(await loadWith(getAccount('a@example.com'))).toMatchObject({
+      _tag: 'Success',
+      success: { graph: { clientId: '00000000-0000-4000-8000-000000000003' } },
+    });
+  });
+
   it('explains invalid TOML and schema errors with the file path', async () => {
     const invalidToml = `${tempDir}/invalid.toml`;
     const invalidSchema = `${tempDir}/schema.toml`;

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import type { Account } from '../../../shared/accounts/account';
-import { ImapError, OAuthError } from '../errors/errors';
+import { OAuthError } from '../../../shared/errors/accounts';
+import { ImapError } from '../errors/errors';
 import type { ImapLogin } from './imap-client';
 import { imapLoginFor, passwordLogin, storeVerifiedLogin } from './login';
 

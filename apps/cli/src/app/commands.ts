@@ -7,6 +7,7 @@ import type { CredentialKind } from '../shared/accounts/secrets';
 import { defineCommand, flag, UsageError } from '../shared/command-line';
 import type { Program } from '../shared/command-program';
 import { checkDavAccounts } from '../shared/dav/status';
+import { checkGraphAccounts } from '../shared/graph/status';
 import { stdinIsTerminal } from '../shared/terminal';
 import { checkOut, writeAttachment } from './attachment-file';
 import { calendarCommands } from './calendar-commands';
@@ -62,7 +63,7 @@ const status = defineCommand(
     name: 'status',
     summary: 'Check that each account can log in',
     description:
-      'Check that each account has credentials in the OS keyring and that it logs in: to mail, and to calendars and contacts (dav) when the account has [accounts.dav]. Exits 1 when any login is not ready; its message says what to do.',
+      'Check that each account has credentials in the OS keyring and that it logs in: to mail, to calendars and contacts (dav) when the account has [accounts.dav], and to Outlook calendars (graph) when it has [accounts.graph]. Exits 1 when any login is not ready; its message says what to do.',
     flags: {
       account: optionalAccount('Check only this account'),
       offline: flag.switch('Only check the keyring; do not connect'),
@@ -72,18 +73,19 @@ const status = defineCommand(
     Effect.gen(function* () {
       const selected = yield* selectedAccounts(values.account);
       const options = { verify: !values.offline };
-      const [mail, dav] = yield* Effect.all(
+      const [mail, dav, graph] = yield* Effect.all(
         [
           checkAccounts(
             selected.map(({ email }) => email),
             options,
           ),
           checkDavAccounts(selected, options),
+          checkGraphAccounts(selected, options),
         ],
         { concurrency: 'unbounded' },
       );
       const results = selected.flatMap(({ email }) =>
-        [...mail, ...dav].filter((result) => result.email === email),
+        [...mail, ...dav, ...graph].filter((result) => result.email === email),
       );
       return json(
         results,
@@ -95,11 +97,11 @@ const status = defineCommand(
 const credentialKind = (
   only: string | undefined,
 ): Effect.Effect<CredentialKind | undefined, UsageError> =>
-  only === undefined || only === 'mail' || only === 'dav'
+  only === undefined || only === 'mail' || only === 'dav' || only === 'graph'
     ? Effect.succeed(only)
     : Effect.fail(
         new UsageError({
-          message: `pim login: --only must be mail or dav, not "${only}"`,
+          message: `pim login: --only must be mail, dav or graph, not "${only}"`,
         }),
       );
 
@@ -108,12 +110,12 @@ const login = defineCommand(
     name: 'login',
     summary: 'Log in and store credentials in the OS keyring',
     description:
-      'Prompt for each mail password (or app password), or sign in with Microsoft for accounts with auth = "microsoft". Accounts with [accounts.dav] also prompt for their calendar and contacts password. Check each login against the server and store it in the OS keyring. Needs an interactive terminal: agents should ask the user to run it.',
+      'Prompt for each mail password (or app password), or sign in with Microsoft for accounts with auth = "microsoft". Accounts with [accounts.dav] also prompt for their calendar and contacts password, and accounts with [accounts.graph] sign in with Microsoft for their Outlook calendars. Check each login against the server and store it in the OS keyring. Needs an interactive terminal: agents should ask the user to run it.',
     flags: {
       account: optionalAccount('Log in to only this account'),
       only: flag.optionalText(
-        'mail|dav',
-        'Log in to only mail, or only calendars and contacts',
+        'mail|dav|graph',
+        'Log in to only mail, only calendars and contacts, or only Outlook calendars',
       ),
     },
   },
@@ -132,8 +134,8 @@ const login = defineCommand(
         return yield* new UsageError({
           message:
             values.account === undefined
-              ? 'pim login --only dav: no account has an [accounts.dav] table in the account config'
-              : `pim login --only dav: ${values.account} has no [accounts.dav] table in the account config`,
+              ? `pim login --only ${only}: no account has an [accounts.${only}] table in the account config`
+              : `pim login --only ${only}: ${values.account} has no [accounts.${only}] table in the account config`,
         });
       }
       const succeeded = yield* loginAccounts(steps);

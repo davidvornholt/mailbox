@@ -62,3 +62,22 @@ export class InvitationError extends Schema.TaggedError<InvitationError>()(
     message: Schema.String,
   },
 ) {}
+
+// No account has a calendar server in its config, or the account named has
+// none.
+export class CalendarNotConfiguredError extends Schema.TaggedError<CalendarNotConfiguredError>()(
+  'CalendarNotConfiguredError',
+  {
+    message: Schema.String,
+  },
+) {}
+
+// pim reads Outlook calendars through Microsoft Graph but does not write to
+// them yet.
+export class OutlookReadOnlyError extends Schema.TaggedError<OutlookReadOnlyError>()(
+  'OutlookReadOnlyError',
+  {
+    account: Schema.String,
+    message: Schema.String,
+  },
+) {}
