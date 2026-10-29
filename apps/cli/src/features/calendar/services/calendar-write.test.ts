@@ -91,6 +91,14 @@ const twoWorkCalendars = {
   },
 };
 
+// A CalDAV calendar whose name has a slash.
+const slashedCalendar = {
+  ...calendarRoutes,
+  'PROPFIND /calendars/me/': {
+    body: multistatus(davCalendar('/calendars/me/shared/', 'Work/Shared')),
+  },
+};
+
 const createdOnCalDav = {
   ...calendarRoutes,
   'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
@@ -148,6 +156,7 @@ describe('createEvent', () => {
     > = [
       [calendarRoutes, ['work'], { calendar: 'Work' }],
       [twoWorkCalendars, ['Work'], { calendar: 'Work' }],
+      [slashedCalendar, ['Work/Shared'], { calendar: 'Work/Shared' }],
       [calendarRoutes, ['Calendar'], { calendar: 'Work', teams: true }],
     ];
     const refusals = await Promise.all(
@@ -164,6 +173,7 @@ describe('createEvent', () => {
       }),
     );
     expect(refusals).toEqual([
+      ['CalendarNotFoundError', [], []],
       ['CalendarNotFoundError', [], []],
       ['CalendarNotFoundError', [], []],
       ['EventChangeError', [], []],

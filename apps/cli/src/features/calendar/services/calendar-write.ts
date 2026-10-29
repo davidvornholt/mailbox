@@ -46,6 +46,13 @@ const noTeams = (href: string) =>
 const isMissing = (match: Result.Result<unknown, 'ambiguous' | 'missing'>) =>
   Result.isFailure(match) && match.failure === 'missing';
 
+const webUrl = /^https?:\/\//iu;
+
+// A CalDAV calendar href is a path or a URL. A calendar name may contain a
+// slash too, but not at its start.
+const isCalendarHref = (wanted: string) =>
+  wanted.startsWith('/') || webUrl.test(wanted);
+
 // The Outlook calendar wanted names, or none when the account keeps it on
 // its CalDAV server. A CalDAV href or an Outlook id names one server, and a
 // name both servers know is ambiguous.
@@ -53,7 +60,7 @@ const outlookCalendar = (account: Account, wanted: string) =>
   Effect.gen(function* () {
     if (
       account.graph === undefined ||
-      (account.dav !== undefined && isCalDavHref(wanted))
+      (account.dav !== undefined && isCalendarHref(wanted))
     ) {
       return;
     }
