@@ -54,6 +54,9 @@ export type EventDetail = {
   readonly account: string;
   readonly href: string;
   readonly etag?: string;
+  // The series an occurrence of a recurring Outlook event belongs to; its
+  // href stands for every occurrence.
+  readonly seriesHref?: string;
   readonly uid: string;
   readonly summary: string;
   readonly start: string;
@@ -63,6 +66,11 @@ export type EventDetail = {
   readonly location?: string;
   readonly description?: string;
   readonly url?: string;
+  // The Teams meeting of an Outlook event, with the link to join it.
+  readonly onlineMeeting?: {
+    readonly provider: string;
+    readonly joinUrl?: string;
+  };
   readonly status?: string;
   readonly organizer?: {
     readonly email: string;

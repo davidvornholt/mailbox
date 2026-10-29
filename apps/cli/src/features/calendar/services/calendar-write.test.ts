@@ -1,219 +1,184 @@
 import { describe, expect, it } from 'bun:test';
+import type { Effect } from 'effect';
+import type { Account } from '../../../shared/accounts/account';
+import type { Dav } from '../../../shared/dav/dav';
 import {
   davAccount,
   failsOnFakeDav,
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
-import { createEvent, deleteEvent, updateEvent } from './calendar-write';
+import type { Graph } from '../../../shared/graph/graph';
+import {
+  graphAccount,
+  onFakeGraph,
+} from '../../../shared/graph/graph-server.fixture';
 import {
   calendarRoutes,
   eventRoutes,
-  href,
-  invitation,
-  meeting,
-  noScheduling,
   single,
   target,
-  trip,
-} from './calendar-write.fixture';
-import { berlin, icsOf, weeklySeries } from './ical.fixture';
+} from './caldav-write.fixture';
+import { createEvent, deleteEvent, updateEvent } from './calendar-write';
+import { berlin, icsOf } from './ical.fixture';
+import { received } from './invitation.fixture';
+import { importInvitation } from './invitation-import';
+import { answerInvitation } from './invitation-reply';
 
-const newHref = /^\/calendars\/me\/work\/(?<uid>[0-9a-f-]{36})\.ics$/u;
-const scheduling = /ORGANIZER|ATTENDEE/u;
+// An account with calendars on a CalDAV server and in Outlook.
+const both: Account = { ...davAccount, graph: graphAccount.graph };
+
+const outlookEvent = {
+  '@odata.etag': 'W/"1"',
+  id: 'event-1',
+  subject: 'Planning',
+  start: { dateTime: '2026-11-03T13:00:00.0000000', timeZone: 'UTC' },
+  end: { dateTime: '2026-11-03T14:00:00.0000000', timeZone: 'UTC' },
+  isOrganizer: true,
+};
+
+const graphRoutes = (...names: ReadonlyArray<string>) => ({
+  '/me/calendars': {
+    value: names.map((name, index) => ({
+      id: `cal-${index + 1}`,
+      name,
+      canEdit: true,
+    })),
+  },
+  'POST /me/calendars/cal-1/events': outlookEvent,
+  '/me/events/event-1': outlookEvent,
+  'PATCH /me/events/event-1': outlookEvent,
+});
+
+const onBoth = <A, E>(
+  graphNames: ReadonlyArray<string>,
+  effect: Effect.Effect<A, E, Dav | Graph>,
+) => onFakeGraph(graphRoutes(...graphNames), effect);
+
+const request = {
+  title: 'Planning',
+  span: {
+    _tag: 'Times',
+    startMs: Date.parse('2026-11-03T13:00:00Z'),
+    endMs: Date.parse('2026-11-03T14:00:00Z'),
+  },
+  attendees: [],
+  notifyAttendees: false,
+  zone: berlin,
+  teams: false,
+} as const;
+
+const graphWrites = (requests: ReadonlyArray<{ readonly method?: string }>) =>
+  requests.flatMap(({ method }) => (method === undefined ? [] : [method]));
 
 describe('createEvent', () => {
-  it('stores a new event that invites no one', async () => {
-    const { value, requests } = await succeedsOnFakeDav(
+  it('writes to the server that holds the calendar', async () => {
+    const outlook = onBoth(
+      ['Calendar'],
+      createEvent(both, { ...request, calendar: 'Calendar' }, berlin),
+    );
+    const outlookRun = await succeedsOnFakeDav(calendarRoutes, outlook.effect);
+    expect(outlookRun.value.href).toBe('event-1');
+    expect(graphWrites(outlook.requests)).toEqual(['POST']);
+    expect(writeRequests(outlookRun.requests)).toEqual([]);
+
+    const dav = onBoth(
+      ['Calendar'],
+      createEvent(both, { ...request, calendar: 'Work' }, berlin),
+    );
+    const davRun = await succeedsOnFakeDav(
       {
         ...calendarRoutes,
         'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
       },
-      createEvent(
-        davAccount,
-        { calendar: 'Work', ...trip, attendees: [], notifyAttendees: false },
-        berlin,
-      ),
+      dav.effect,
     );
-    const [put] = writeRequests(requests);
-    const { uid } = newHref.exec(value.href)?.groups ?? {};
-    expect(value).toEqual({
-      account: 'me@example.com',
-      href: expect.stringMatching(newHref),
-      etag: '"e1"',
-      uid: uid ?? 'no uid in the href',
-      summary: 'Trip',
-      start: '2026-10-30',
-      end: '2026-10-31',
-      allDay: true,
-      attendees: [],
-    });
-    expect(put?.url).toBe(`https://dav.example.com${value.href}`);
-    expect(put?.headers.get('if-none-match')).toBe('*');
-    expect(put?.headers.get('content-type')).toBe(
-      'text/calendar; charset=utf-8',
-    );
-    expect(put?.body).toContain(`UID:${uid}`);
-    expect(put?.body).not.toMatch(scheduling);
+    expect(writeRequests(davRun.requests)).toHaveLength(1);
+    expect(graphWrites(dav.requests)).toEqual([]);
   });
 
-  it('refuses a calendar the user may only read', async () => {
-    const { error, requests } = await failsOnFakeDav(
-      calendarRoutes,
-      createEvent(
-        davAccount,
-        { calendar: 'Shared', ...trip, attendees: [], notifyAttendees: false },
-        berlin,
-      ),
-    );
-    expect(error._tag).toBe('ReadOnlyCalendarError');
-    expect(writeRequests(requests)).toEqual([]);
-  });
-});
-
-describe('updateEvent', () => {
-  it('changes the version the caller read', async () => {
-    const { value, requests } = await succeedsOnFakeDav(
-      eventRoutes(icsOf(...single)),
-      updateEvent(davAccount, target(), { title: 'Planning, final' }, berlin),
-    );
-    expect(value).toMatchObject({ etag: '"v2"', summary: 'Planning, final' });
-    const [put] = writeRequests(requests);
-    expect(put?.method).toBe('PUT');
-    expect(put?.headers.get('if-match')).toBe('"v1"');
-    expect(put?.body).toContain('SUMMARY:Planning\\, final');
-  });
-
-  it.each([
-    [
-      'an event that changed since it was read',
-      eventRoutes(icsOf(...single), { etag: '"v9"' }),
-      target(),
-      'DavConflictError',
-    ],
-    [
-      'an event the server gives no etag for',
-      eventRoutes(icsOf(...single), {}),
-      target(),
-      'EventChangeError',
-    ],
-    [
-      'a meeting with guests',
-      eventRoutes(icsOf(...meeting)),
-      target({ series: true }),
-      'EventHasAttendeesError',
-    ],
-    [
-      'a recurring event without --series',
-      eventRoutes(icsOf(...weeklySeries)),
-      target(),
-      'EventChangeError',
-    ],
-    [
-      'a meeting someone else organizes',
-      eventRoutes(icsOf(...invitation)),
-      target({ notifyAttendees: true }),
-      'EventHasAttendeesError',
-    ],
-    [
-      'a meeting on a server that does not send updates',
-      { ...eventRoutes(icsOf(...meeting)), [`OPTIONS ${href}`]: noScheduling },
-      target({ notifyAttendees: true }),
-      'SchedulingUnsupportedError',
-    ],
-    [
-      'a meeting with an attendee the server does not email',
-      eventRoutes(
-        icsOf(
-          ...meeting.map((line) =>
-            line.replace('ATTENDEE;', 'ATTENDEE;SCHEDULE-AGENT=CLIENT;'),
+  it('writes nowhere for a name both servers know or Teams on CalDAV', async () => {
+    const refusals = await Promise.all(
+      [
+        onBoth(
+          ['work'],
+          createEvent(both, { ...request, calendar: 'Work' }, berlin),
+        ),
+        onBoth(
+          ['Calendar'],
+          createEvent(
+            both,
+            { ...request, calendar: 'Work', teams: true },
+            berlin,
           ),
         ),
-      ),
-      target({ notifyAttendees: true }),
-      'SchedulingUnsupportedError',
-    ],
-    [
-      '--notify-attendees for an event without attendees',
-      eventRoutes(icsOf(...single)),
-      target({ notifyAttendees: true }),
-      'EventChangeError',
-    ],
-  ])('refuses %s', async (_name, routes, wanted, tag) => {
-    const { error, requests } = await failsOnFakeDav(
-      routes,
-      updateEvent(davAccount, wanted, { title: 'Renamed' }, berlin),
+      ].map(async ({ effect, requests }) => {
+        const { error, requests: davRequests } = await failsOnFakeDav(
+          calendarRoutes,
+          effect,
+        );
+        return [error._tag, graphWrites(requests), writeRequests(davRequests)];
+      }),
     );
-    expect(error).toMatchObject({ _tag: tag });
-    expect(writeRequests(requests)).toEqual([]);
+    expect(refusals).toEqual([
+      ['CalendarNotFoundError', [], []],
+      ['EventChangeError', [], []],
+    ]);
   });
+});
 
-  it('renames a recurring event with --series', async () => {
-    const { value } = await succeedsOnFakeDav(
-      eventRoutes(icsOf(...weeklySeries)),
+describe('updateEvent and deleteEvent', () => {
+  it('change a CalDAV href on the calendar server and an id in Outlook', async () => {
+    const outlook = onBoth(
+      [],
       updateEvent(
-        davAccount,
-        target({ series: true }),
-        { title: 'Sync' },
+        both,
+        {
+          href: 'event-1',
+          etag: 'W/"1"',
+          series: false,
+          notifyAttendees: false,
+        },
+        { title: 'Planning, final', zone: berlin, teams: false },
         berlin,
       ),
     );
-    expect(value.summary).toBe('Sync');
-  });
+    await succeedsOnFakeDav(calendarRoutes, outlook.effect);
+    expect(graphWrites(outlook.requests)).toEqual(['PATCH']);
 
-  it('reports a change the server refused for its version', async () => {
-    const { error } = await failsOnFakeDav(
-      {
-        ...eventRoutes(icsOf(...single)),
-        [`PUT ${href}`]: { status: 412 },
-      },
-      updateEvent(davAccount, target(), { title: 'Renamed' }, berlin),
-    );
-    expect(error._tag).toBe('DavConflictError');
-  });
-});
-
-describe('updateEvent on a server that changes the event', () => {
-  it('reads back an event the server changed as it stored it', async () => {
-    const { value } = await succeedsOnFakeDav(
-      {
-        ...eventRoutes(icsOf(...single)),
-        [`GET ${href}`]: [
-          { status: 200, body: icsOf(...single), headers: { etag: '"v1"' } },
-          {
-            status: 200,
-            body: icsOf(...single).replace('SUMMARY:Planning', 'SUMMARY:Kept'),
-            headers: { etag: '"v3"' },
-          },
-        ],
-        [`PUT ${href}`]: { status: 204 },
-      },
-      updateEvent(davAccount, target(), { title: 'Renamed' }, berlin),
-    );
-    expect(value).toMatchObject({ etag: '"v3"', summary: 'Kept' });
-  });
-});
-
-describe('deleteEvent', () => {
-  it('deletes the version the caller read and asks the server not to notify anyone', async () => {
-    const { value, requests } = await succeedsOnFakeDav(
+    const dav = onBoth([], deleteEvent(both, target(), berlin));
+    const davRun = await succeedsOnFakeDav(
       eventRoutes(icsOf(...single)),
-      deleteEvent(davAccount, target(), berlin),
+      dav.effect,
     );
-    expect(value).toMatchObject({ href, summary: 'Planning' });
-    expect(value).not.toHaveProperty('etag');
-    const [deletion] = writeRequests(requests);
-    expect(deletion?.method).toBe('DELETE');
-    expect(deletion?.headers.get('if-match')).toBe('"v1"');
-    expect(deletion?.headers.get('schedule-reply')).toBe('F');
+    expect(writeRequests(davRun.requests).map(({ method }) => method)).toEqual([
+      'DELETE',
+    ]);
+    expect(dav.requests).toEqual([]);
   });
+});
 
-  it('refuses a meeting with guests', async () => {
-    const { error, requests } = await failsOnFakeDav(
-      eventRoutes(icsOf(...meeting)),
-      deleteEvent(davAccount, target(), berlin),
+describe('invitations of an account with only Outlook calendars', () => {
+  it('point to the meeting Outlook put into the calendar', async () => {
+    const writes: ReadonlyArray<Effect.Effect<unknown, unknown, Dav>> = [
+      importInvitation(graphAccount, received(), undefined, berlin),
+      answerInvitation(
+        graphAccount,
+        received(),
+        { partstat: 'accepted', notifyOrganizer: true },
+        berlin,
+      ),
+    ];
+    const refused = await Promise.all(
+      writes.map((write) => failsOnFakeDav(calendarRoutes, write)),
     );
-    expect(error._tag).toBe('EventHasAttendeesError');
-    expect(writeRequests(requests)).toEqual([]);
+    for (const { error, requests } of refused) {
+      expect(error).toMatchObject({
+        _tag: 'InvitationError',
+        message:
+          'Outlook puts the invitations of me@example.com into its calendar itself. Find the meeting with "pim calendar events --account me@example.com" and answer it with "pim calendar respond --account me@example.com --href <href>"',
+      });
+      expect(requests).toEqual([]);
+    }
   });
 });

@@ -4,7 +4,7 @@ import {
   type FakeRoute,
   multistatus,
 } from '../../../shared/dav/dav-server.fixture';
-import type { EventTarget } from './calendar-write';
+import type { EventTarget } from './caldav-write';
 import { vevent } from './ical.fixture';
 
 export type Routes = Readonly<Record<string, FakeRoute>>;

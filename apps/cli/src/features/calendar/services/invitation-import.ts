@@ -17,11 +17,7 @@ import {
   listCalendars,
   replaceCalendarObjectSilently,
 } from './caldav';
-import {
-  type CalendarWriteError,
-  detailOf,
-  writableCalendar,
-} from './calendar-write';
+import type { CalDavWriteError } from './caldav-write';
 import { type CalendarObject, parseCalendar } from './event-fields';
 import type { ReceivedInvitation } from './invitation';
 import { type EventCopy, findCopies, writable } from './invitation-copies';
@@ -31,10 +27,11 @@ import {
   leftToCalendarApp,
   leftToServer,
 } from './invitation-merge';
-import { refuseOutlookWrite } from './read-only';
+import { outlookInvitation } from './outlook-answer';
 import { userAddresses } from './scheduling';
+import { detailOf, writableCalendar } from './stored-event';
 
-export type InvitationImportError = CalendarWriteError | InvitationError;
+export type InvitationImportError = CalDavWriteError | InvitationError;
 
 // The meeting in the user's calendars, or the calendars it may go to.
 export type MeetingPlace =
@@ -324,7 +321,7 @@ export const importInvitation = (
   local: DateTime.TimeZone,
 ): Effect.Effect<ImportOutcome, InvitationImportError, Dav> =>
   Effect.gen(function* () {
-    yield* refuseOutlookWrite(account);
+    yield* outlookInvitation(account);
     if (account.dav === undefined) {
       return yield* new InvitationError({
         message: `${account.email} has no calendar server (a dav table in the account config), so pim cannot add the meeting to a calendar`,

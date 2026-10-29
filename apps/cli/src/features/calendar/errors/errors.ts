@@ -71,13 +71,3 @@ export class CalendarNotConfiguredError extends Schema.TaggedError<CalendarNotCo
     message: Schema.String,
   },
 ) {}
-
-// pim reads Outlook calendars through Microsoft Graph but does not write to
-// them yet.
-export class OutlookReadOnlyError extends Schema.TaggedError<OutlookReadOnlyError>()(
-  'OutlookReadOnlyError',
-  {
-    account: Schema.String,
-    message: Schema.String,
-  },
-) {}

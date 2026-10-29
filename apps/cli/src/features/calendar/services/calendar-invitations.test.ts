@@ -5,7 +5,11 @@ import {
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
-import { createEvent, deleteEvent, updateEvent } from './calendar-write';
+import {
+  createCalDavEvent,
+  deleteCalDavEvent,
+  updateCalDavEvent,
+} from './caldav-write';
 import {
   calendarRoutes,
   eventRoutes,
@@ -19,7 +23,7 @@ import {
   target,
   trip,
   unfolded,
-} from './calendar-write.fixture';
+} from './caldav-write.fixture';
 import { berlin, icsOf, vevent } from './ical.fixture';
 
 describe('createEvent with attendees', () => {
@@ -55,7 +59,7 @@ describe('createEvent with attendees', () => {
           ),
         },
       },
-      createEvent(davAccount, invite, berlin),
+      createCalDavEvent(davAccount, invite, berlin),
     );
     const [put] = writeRequests(requests);
     expect(unfolded(put?.body)).toContain(
@@ -80,7 +84,7 @@ describe('createEvent with attendees', () => {
   it('prints the invitation it wrote when the server does not return it', async () => {
     const { value } = await succeedsOnFakeDav(
       inviteRoutes,
-      createEvent(davAccount, invite, berlin),
+      createCalDavEvent(davAccount, invite, berlin),
     );
     expect(value).toMatchObject({
       summary: 'Trip',
@@ -117,7 +121,7 @@ describe('createEvent with attendees', () => {
   ])('refuses an invitation %s', async (_name, routes, change, tag) => {
     const { error, requests } = await failsOnFakeDav(
       routes,
-      createEvent(davAccount, { ...invite, ...change }, berlin),
+      createCalDavEvent(davAccount, { ...invite, ...change }, berlin),
     );
     expect(error).toMatchObject({ _tag: tag });
     expect(writeRequests(requests)).toEqual([]);
@@ -151,7 +155,7 @@ describe('updateEvent of a meeting', () => {
         'ORGANIZER:mailto:me@example.com',
         'ATTENDEE;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=1.2:mailto:ana@example.com',
       ),
-      updateEvent(
+      updateCalDavEvent(
         davAccount,
         target({ notifyAttendees: true }),
         { start: { _tag: 'Instant', ms: Date.parse('2026-10-29T09:00:00Z') } },
@@ -182,7 +186,7 @@ describe('updateEvent of a meeting', () => {
           { status: 503 },
         ],
       },
-      updateEvent(
+      updateCalDavEvent(
         davAccount,
         target({ notifyAttendees: true }),
         { title: 'Renamed' },
@@ -199,7 +203,7 @@ describe('updateEvent of a meeting', () => {
   it('invites attendees to an event and makes the user its organizer', async () => {
     const { requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...single)),
-      updateEvent(
+      updateCalDavEvent(
         davAccount,
         target({ notifyAttendees: true }),
         { addAttendees: ['ana@example.com'] },
@@ -216,7 +220,7 @@ describe('updateEvent of a meeting', () => {
   it('refuses to invite attendees without --notify-attendees', async () => {
     const { error, requests } = await failsOnFakeDav(
       eventRoutes(icsOf(...single)),
-      updateEvent(
+      updateCalDavEvent(
         davAccount,
         target(),
         { addAttendees: ['ana@example.com'] },
@@ -235,7 +239,7 @@ describe('updateEvent of a meeting with a stored SCHEDULE-FORCE-SEND', () => {
     );
     const { requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...forced)),
-      updateEvent(
+      updateCalDavEvent(
         davAccount,
         target({ notifyAttendees: true }),
         { title: 'Renamed' },
@@ -252,7 +256,7 @@ describe('deleteEvent of a meeting', () => {
   it('cancels a meeting the user organizes with --notify-attendees', async () => {
     const { value, requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...undelivered)),
-      deleteEvent(davAccount, target({ notifyAttendees: true }), berlin),
+      deleteCalDavEvent(davAccount, target({ notifyAttendees: true }), berlin),
     );
     expect(value.attendees[1]).not.toHaveProperty('scheduleStatus');
     const [deletion] = writeRequests(requests);
@@ -263,7 +267,7 @@ describe('deleteEvent of a meeting', () => {
   it("deletes the user's copy of someone else's meeting without telling the organizer", async () => {
     const { value, requests } = await succeedsOnFakeDav(
       eventRoutes(icsOf(...invitation)),
-      deleteEvent(davAccount, target(), berlin),
+      deleteCalDavEvent(davAccount, target(), berlin),
     );
     expect(value).toMatchObject({ organizer: { email: 'boss@example.com' } });
     const [deletion] = writeRequests(requests);
@@ -275,7 +279,7 @@ describe('deleteEvent of a meeting', () => {
   it("refuses to decline someone else's meeting by deleting it", async () => {
     const { error, requests } = await failsOnFakeDav(
       eventRoutes(icsOf(...invitation)),
-      deleteEvent(davAccount, target({ notifyAttendees: true }), berlin),
+      deleteCalDavEvent(davAccount, target({ notifyAttendees: true }), berlin),
     );
     expect(error).toMatchObject({ _tag: 'EventHasAttendeesError' });
     expect(error.message).toContain('pim calendar respond');

@@ -9,7 +9,7 @@ import {
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
-import { noScheduling, unfolded } from './calendar-write.fixture';
+import { noScheduling, unfolded } from './caldav-write.fixture';
 import { parseCalendar } from './event-fields';
 import { berlin } from './ical.fixture';
 import { unansweredCopy } from './invitation';

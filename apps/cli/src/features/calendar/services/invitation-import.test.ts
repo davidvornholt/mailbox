@@ -7,7 +7,7 @@ import {
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
-import { calendarRoutes, unfolded } from './calendar-write.fixture';
+import { calendarRoutes, unfolded } from './caldav-write.fixture';
 import { berlin } from './ical.fixture';
 import { unansweredCopy } from './invitation';
 import { invitationIcs, received, review } from './invitation.fixture';

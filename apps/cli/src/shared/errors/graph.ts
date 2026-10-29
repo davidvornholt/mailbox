@@ -43,6 +43,16 @@ export class GraphThrottledError extends Schema.TaggedError<GraphThrottledError>
   },
 ) {}
 
+// The event changed since the caller read it (HTTP 412, or another etag
+// than the one the caller passed).
+export class GraphConflictError extends Schema.TaggedError<GraphConflictError>()(
+  'GraphConflictError',
+  {
+    href: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
 // Any other failure: the request did not reach Microsoft Graph, timed out,
 // or got an error or an unexpected answer.
 export class GraphError extends Schema.TaggedError<GraphError>()('GraphError', {
@@ -54,4 +64,5 @@ export type GraphRequestError =
   | GraphAccessError
   | GraphNotFoundError
   | GraphThrottledError
+  | GraphConflictError
   | GraphError;

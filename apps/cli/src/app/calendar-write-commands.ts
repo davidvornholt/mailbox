@@ -86,6 +86,10 @@ const optionalTimeOf = (
     ? Effect.succeed(undefined)
     : timeOf(command, name, value, zone);
 
+const teamsFlag = flag.switch(
+  'Add a Teams meeting. Only Outlook calendars of Microsoft 365 work or school accounts offer one, and pim cannot remove it again',
+);
+
 const notifyAttendeesFlag = flag.switch(
   'Allow a write that makes the server email the attendees. Pass it only when the user asked to tell them',
 );
@@ -105,7 +109,7 @@ const create = defineCommand(
   {
     name: 'calendar create',
     summary: 'Create an event',
-    description: `Create an event in one calendar. Without --attendee, pim writes no organizer, attendees, or alarms, so the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href, when the server returns one its etag, and, when the server reports it, how it delivered each invitation. pim writes only to the calendars of accounts with a dav table; it only reads Outlook calendars.`,
+    description: `Create an event in one calendar. Without --attendee, the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself, as Microsoft does for Outlook calendars. A Teams meeting is an Outlook event with a join link; --teams adds one and emails no one by itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. A CalDAV server gets timed events in UTC; Outlook keeps an event's times in --time-zone. Prints the event with its href, when the server returns one its etag, its Teams join link, and, when the server reports it, how it delivered each invitation.`,
     flags: {
       account: accountFlag,
       calendar: flag.text('name|href', 'Calendar from "pim calendar list"'),
@@ -119,6 +123,7 @@ const create = defineCommand(
       description: flag.optionalText('text', 'Description'),
       attendee: flag.texts('email', 'Address to invite; repeat for more'),
       notifyAttendees: notifyAttendeesFlag,
+      teams: teamsFlag,
       timeZone: timeZoneFlag,
     },
   },
@@ -150,6 +155,8 @@ const create = defineCommand(
             : { description: values.description }),
           attendees: values.attendee,
           notifyAttendees: values.notifyAttendees,
+          zone,
+          teams: values.teams,
         },
         DateTime.zoneMakeLocal(),
       );
@@ -183,7 +190,7 @@ const update = defineCommand(
   {
     name: 'calendar update',
     summary: 'Change an event',
-    description: `Change the title, times, location, description, or attendees of an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim does not move recurring events. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one. pim only reads Outlook events.`,
+    description: `Change the title, times, location, description, or attendees of an event, or add a Teams meeting. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim does not move recurring events; in an Outlook calendar, an href from "pim calendar events" names one occurrence, which pim changes alone. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one.`,
     flags: {
       ...targetFlags,
       title: flag.optionalText('text', 'New title'),
@@ -199,6 +206,7 @@ const update = defineCommand(
         'email',
         'Attendee to take off the event; repeat for more',
       ),
+      teams: teamsFlag,
       timeZone: timeZoneFlag,
     },
   },
@@ -211,10 +219,11 @@ const update = defineCommand(
         [title, values.start, values.end, location, description].every(
           (value) => value === undefined,
         ) &&
-        addAttendee.length + removeAttendee.length === 0
+        addAttendee.length + removeAttendee.length === 0 &&
+        !values.teams
       ) {
         return yield* new UsageError({
-          message: `pim ${command}: pass at least one of --title, --start, --end, --location, --description, --add-attendee, or --remove-attendee`,
+          message: `pim ${command}: pass at least one of --title, --start, --end, --location, --description, --add-attendee, --remove-attendee, or --teams`,
         });
       }
       yield* nonEmpty(command, 'title', title);
@@ -235,6 +244,8 @@ const update = defineCommand(
           ...(end === undefined ? {} : { end }),
           addAttendees: addAttendee,
           removeAttendees: removeAttendee,
+          zone,
+          teams: values.teams,
         },
         DateTime.zoneMakeLocal(),
       );
@@ -247,7 +258,7 @@ const remove = defineCommand(
     name: 'calendar delete',
     summary: 'Delete an event',
     description:
-      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. Deleting a meeting the user organizes makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees and only on a server that sends cancellations itself. pim deletes the user\'s copy of a meeting someone else organizes without telling anyone, and refuses to with --notify-attendees, which would tell the organizer the user declined; "pim calendar respond" declines. pim only reads Outlook events. Prints the deleted event.',
+      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series; in an Outlook calendar, an href from "pim calendar events" names one occurrence, which pim deletes alone. Deleting a meeting the user organizes makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees and only on a server that sends cancellations itself. On a CalDAV server, pim deletes the user\'s copy of a meeting someone else organizes without telling anyone, and refuses to with --notify-attendees, which would tell the organizer the user declined. In an Outlook calendar, pim leaves such a meeting to "pim calendar respond --href", which declines it without telling anyone unless --notify-organizer is passed. Prints the deleted event.',
     flags: targetFlags,
   },
   (values): CommandEffect =>

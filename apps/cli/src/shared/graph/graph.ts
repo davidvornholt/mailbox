@@ -66,8 +66,9 @@ export class Graph extends Context.Service<
     Graph,
     makeGraph((url, init) =>
       fetch(url, {
-        method: 'GET',
+        method: init.method,
         headers: { ...init.headers },
+        ...(init.body === undefined ? {} : { body: init.body }),
         signal: init.signal,
       }),
     ),

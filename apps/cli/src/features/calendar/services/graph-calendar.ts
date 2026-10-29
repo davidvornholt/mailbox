@@ -12,7 +12,6 @@ import type { Calendar, EventDetail } from '../schemas/calendar';
 import { floatingMs } from './caldav';
 import {
   type AccountEvents,
-  type CalendarMatch,
   type CalendarSource,
   collectEvents,
   type DatedEvent,
@@ -38,11 +37,13 @@ import { overlaps } from './occurrences';
 // pim converts times to the local zone itself.
 const utcTimes = 'outlook.timezone="UTC"';
 const textBody = 'outlook.body-content-type="text"';
-const calendarFields = 'id,name,hexColor,canEdit';
+// How pim reads an event, also in the answer to a write.
+export const eventPreferences = [utcTimes, textBody];
+const calendarFields = 'id,name,hexColor,canEdit,allowedOnlineMeetingProviders';
 const summaryFields =
   'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,bodyPreview';
 const detailFields =
-  'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId';
+  'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId,isOrganizer,responseStatus,isOnlineMeeting,onlineMeetingProvider,onlineMeeting';
 // Microsoft Graph returns the cancelled and changed occurrences of a series
 // only on a request for its series master, and gives the changed ones only
 // the fields selected for the master.
@@ -51,9 +52,9 @@ const seriesFields =
 const pageSize = 100;
 
 // Includes the calendars shared with the user that they added in Outlook.
-export const graphCalendars = (
+export const outlookCalendars = (
   client: GraphClient,
-): Effect.Effect<ReadonlyArray<Calendar>, GraphRequestError> =>
+): Effect.Effect<ReadonlyArray<GraphCalendar>, GraphRequestError> =>
   client.list(`/me/calendars?$select=${calendarFields}`).pipe(
     Effect.flatMap((items) =>
       Schema.decodeUnknownEffect(Schema.Array(GraphCalendar))(items).pipe(
@@ -65,16 +66,22 @@ export const graphCalendars = (
         ),
       ),
     ),
+  );
+
+export const graphCalendars = (
+  client: GraphClient,
+): Effect.Effect<ReadonlyArray<Calendar>, GraphRequestError> =>
+  outlookCalendars(client).pipe(
     Effect.map((calendars) =>
       calendars.map((calendar) => graphCalendar(client.account, calendar)),
     ),
   );
 
 // An Outlook calendar by its exact id, or else by its name in any case.
-export const findGraphCalendar = (
-  calendars: ReadonlyArray<Calendar>,
+export const findGraphCalendar = <C extends Calendar>(
+  calendars: ReadonlyArray<C>,
   wanted: string,
-): CalendarMatch => {
+): Result.Result<C, 'ambiguous' | 'missing'> => {
   const exact = calendars.find((calendar) => calendar.href === wanted);
   if (exact !== undefined) {
     return Result.succeed(exact);
@@ -155,7 +162,7 @@ export const graphSource = (
     };
   });
 
-const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
+export const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
 
 const seriesOf = (client: GraphClient, id: string, local: DateTime.TimeZone) =>
   client
@@ -166,9 +173,36 @@ const seriesOf = (client: GraphClient, id: string, local: DateTime.TimeZone) =>
     )
     .pipe(Effect.flatMap((series) => seriesRecurrence(series, local)));
 
-// The event or occurrence with this id. A recurring event also gets the
-// rule of its series, with the days it skips and the occurrences that
-// differ from it.
+// The event or occurrence with this id, with its etag.
+export const readGraphEvent = (
+  client: GraphClient,
+  id: string,
+): Effect.Effect<GraphEvent, GraphRequestError> =>
+  client.get(`${eventPath(id)}?$select=${detailFields}`, GraphEvent, {
+    prefer: eventPreferences,
+  });
+
+// A recurring event also gets the rule of its series, with the days it
+// skips and the occurrences that differ from it.
+export const graphDetailOf = (
+  client: GraphClient,
+  event: GraphEvent,
+  local: DateTime.TimeZone,
+): Effect.Effect<EventDetail, GraphRequestError | CalendarDataError> =>
+  Effect.gen(function* () {
+    const span = yield* graphSpan(event, local);
+    const seriesId =
+      event.type === 'seriesMaster' ? event.id : nonEmpty(event.seriesMasterId);
+    const recurrence =
+      seriesId === undefined
+        ? undefined
+        : yield* seriesOf(client, seriesId, local);
+    return graphEventDetail(event, span, {
+      account: client.account,
+      recurrence,
+    });
+  });
+
 export const graphEvent = (
   account: Account,
   id: string,
@@ -181,20 +215,9 @@ export const graphEvent = (
   Effect.gen(function* () {
     const graph = yield* Graph;
     const client = yield* graph.client(account);
-    const event = yield* client.get(
-      `${eventPath(id)}?$select=${detailFields}`,
-      GraphEvent,
-      { prefer: [utcTimes, textBody] },
+    return yield* graphDetailOf(
+      client,
+      yield* readGraphEvent(client, id),
+      local,
     );
-    const span = yield* graphSpan(event, local);
-    const seriesId =
-      event.type === 'seriesMaster' ? event.id : nonEmpty(event.seriesMasterId);
-    const recurrence =
-      seriesId === undefined
-        ? undefined
-        : yield* seriesOf(client, seriesId, local);
-    return graphEventDetail(event, span, {
-      account: account.email,
-      recurrence,
-    });
   });
