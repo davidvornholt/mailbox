@@ -4,7 +4,6 @@ import type { CalendarDataError } from '../errors/errors';
 import type { Attendee, EventChange, EventDetail } from '../schemas/calendar';
 import { daysBetween, parseCalendarDate } from './calendar-dates';
 import { optional } from './event-fields';
-import { formatUtcStamp } from './ical-time';
 import {
   decodeGraphEvent,
   GraphEvent,
@@ -16,6 +15,7 @@ import {
   nonEmpty,
   nullable,
 } from './graph-events';
+import { formatUtcStamp } from './ical-time';
 
 const RecurrencePattern = Schema.Struct({
   type: Schema.String,
@@ -201,7 +201,7 @@ const cancelledDay = /\.(?<day>\d{4}-\d{2}-\d{2})$/u;
 export const cancelledDays = (
   ids: ReadonlyArray<string>,
 ): ReadonlyArray<string> =>
-  ids.flatMap((id) => cancelledDay.exec(id)?.groups?.day ?? []);
+  ids.flatMap((occurrence) => cancelledDay.exec(occurrence)?.groups?.day ?? []);
 
 // Who attends and how they answered, to compare an occurrence with its
 // series.
@@ -263,7 +263,7 @@ export const seriesRecurrence = (
 ): Effect.Effect<EventDetail['recurrence'], CalendarDataError> =>
   Effect.gen(function* () {
     if (series.recurrence === undefined || series.recurrence === null) {
-      return undefined;
+      return;
     }
     const first = yield* graphSpan(series, local);
     const changed = yield* Effect.forEach(
