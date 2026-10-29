@@ -4,7 +4,9 @@ import type { Account } from '../../../shared/accounts/account';
 import type { Dav } from '../../../shared/dav/dav';
 import {
   davAccount,
+  davResponse,
   failsOnFakeDav,
+  multistatus,
   succeedsOnFakeDav,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
@@ -71,6 +73,28 @@ const request = {
 const graphWrites = (requests: ReadonlyArray<{ readonly method?: string }>) =>
   requests.flatMap(({ method }) => (method === undefined ? [] : [method]));
 
+const davCalendar = (path: string, name: string) =>
+  davResponse(
+    path,
+    `<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>${name}</d:displayname>`,
+  );
+
+// Two CalDAV calendars named Work.
+const twoWorkCalendars = {
+  ...calendarRoutes,
+  'PROPFIND /calendars/me/': {
+    body: multistatus(
+      davCalendar('/calendars/me/work/', 'Work'),
+      davCalendar('/calendars/me/work-2/', 'Work'),
+    ),
+  },
+};
+
+const createdOnCalDav = {
+  ...calendarRoutes,
+  'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
+};
+
 describe('createEvent', () => {
   it('writes to the server that holds the calendar', async () => {
     const outlook = onBoth(
@@ -86,41 +110,53 @@ describe('createEvent', () => {
       ['Calendar'],
       createEvent(both, { ...request, calendar: 'Work' }, berlin),
     );
-    const davRun = await succeedsOnFakeDav(
-      {
-        ...calendarRoutes,
-        'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
-      },
-      dav.effect,
-    );
+    const davRun = await succeedsOnFakeDav(createdOnCalDav, dav.effect);
     expect(writeRequests(davRun.requests)).toHaveLength(1);
     expect(graphWrites(dav.requests)).toEqual([]);
+  });
+
+  it('reaches a CalDAV href or an Outlook id without asking the other server', async () => {
+    const dav = onFakeGraph(
+      {},
+      createEvent(
+        both,
+        { ...request, calendar: '/calendars/me/work/' },
+        berlin,
+      ),
+    );
+    const davRun = await succeedsOnFakeDav(createdOnCalDav, dav.effect);
+    expect(writeRequests(davRun.requests)).toHaveLength(1);
+    expect(dav.requests).toEqual([]);
+
+    const outlook = onBoth(
+      ['Calendar'],
+      createEvent(both, { ...request, calendar: 'cal-1' }, berlin),
+    );
+    const outlookRun = await succeedsOnFakeDav({}, outlook.effect);
+    expect(graphWrites(outlook.requests)).toEqual(['POST']);
+    expect(outlookRun.requests).toEqual([]);
   });
 
   it('writes nowhere for a name both servers know or Teams on CalDAV', async () => {
     const refusals = await Promise.all(
       [
-        onBoth(
-          ['work'],
-          createEvent(both, { ...request, calendar: 'Work' }, berlin),
-        ),
-        onBoth(
-          ['Calendar'],
-          createEvent(
-            both,
-            { ...request, calendar: 'Work', teams: true },
-            berlin,
-          ),
-        ),
-      ].map(async ({ effect, requests }) => {
+        [calendarRoutes, ['work'], { calendar: 'Work' }],
+        [twoWorkCalendars, ['Work'], { calendar: 'Work' }],
+        [calendarRoutes, ['Calendar'], { calendar: 'Work', teams: true }],
+      ].map(async ([routes, graphNames, wanted]) => {
+        const { effect, requests } = onBoth(
+          graphNames,
+          createEvent(both, { ...request, ...wanted }, berlin),
+        );
         const { error, requests: davRequests } = await failsOnFakeDav(
-          calendarRoutes,
+          routes,
           effect,
         );
         return [error._tag, graphWrites(requests), writeRequests(davRequests)];
       }),
     );
     expect(refusals).toEqual([
+      ['CalendarNotFoundError', [], []],
       ['CalendarNotFoundError', [], []],
       ['EventChangeError', [], []],
     ]);

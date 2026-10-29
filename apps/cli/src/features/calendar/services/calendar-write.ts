@@ -43,11 +43,18 @@ const noTeams = (href: string) =>
       'Only Outlook calendars of Microsoft 365 accounts have Teams meetings; pim adds none to a CalDAV calendar',
   });
 
+const isMissing = (match: Result.Result<unknown, 'ambiguous' | 'missing'>) =>
+  Result.isFailure(match) && match.failure === 'missing';
+
 // The Outlook calendar wanted names, or none when the account keeps it on
-// its CalDAV server. A name both servers know is ambiguous.
+// its CalDAV server. A CalDAV href or an Outlook id names one server, and a
+// name both servers know is ambiguous.
 const outlookCalendar = (account: Account, wanted: string) =>
   Effect.gen(function* () {
-    if (account.graph === undefined) {
+    if (
+      account.graph === undefined ||
+      (account.dav !== undefined && isCalDavHref(wanted))
+    ) {
       return;
     }
     const graph = yield* Graph;
@@ -57,13 +64,14 @@ const outlookCalendar = (account: Account, wanted: string) =>
       source,
     }));
     let match = findGraphCalendar(calendars, wanted);
-    if (account.dav !== undefined) {
-      if (Result.isFailure(match) && match.failure === 'missing') {
+    const byId = calendars.some(({ href }) => href === wanted);
+    if (account.dav !== undefined && !byId) {
+      if (isMissing(match)) {
         return;
       }
       const dav = yield* Dav;
       const kept = yield* listCalendars(yield* dav.client(account));
-      if (Result.isSuccess(findCollection(kept, wanted))) {
+      if (!isMissing(findCollection(kept, wanted))) {
         match = Result.fail('ambiguous');
       }
     }
