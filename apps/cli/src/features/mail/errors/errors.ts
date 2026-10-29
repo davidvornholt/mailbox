@@ -2,6 +2,7 @@ import { Schema } from 'effect';
 import type {
   ConfigError,
   KeyringError,
+  MailNotConfiguredError,
   MissingCredentialsError,
   OAuthError,
   UnknownAccountError,
@@ -85,6 +86,7 @@ export class StaleUidError extends Schema.TaggedError<StaleUidError>()(
 export type MailError =
   | ConfigError
   | UnknownAccountError
+  | MailNotConfiguredError
   | MissingCredentialsError
   | KeyringError
   | ImapError

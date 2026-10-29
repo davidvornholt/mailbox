@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import type { Account } from '../../../shared/accounts/account';
+import type { MailAccount } from '../../../shared/accounts/account';
 import {
   freshAccessToken,
   type MicrosoftApp,
@@ -67,7 +67,7 @@ export const storeVerifiedLogin = (
 // Turns the stored credential, a password or a Microsoft refresh token, into
 // an IMAP login.
 export const imapLoginFor = (
-  account: Account,
+  account: MailAccount,
   credentials: {
     readonly get: GetCredential;
     readonly store: StoreCredential;
@@ -76,7 +76,7 @@ export const imapLoginFor = (
 ): Effect.Effect<ImapLogin, MailError> =>
   Effect.gen(function* () {
     const credential = yield* credentials.get(account.email);
-    if (account.auth === 'password') {
+    if (account.mail.auth === 'password') {
       return { pass: credential };
     }
     const accessToken = yield* freshAccessToken(credential, {

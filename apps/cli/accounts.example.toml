@@ -1,29 +1,24 @@
 # Copy to ~/.config/pim/accounts.toml, then run: pim login
 # Passwords and Microsoft sign-ins live in the OS keyring, not in this file.
+#
+# One table per account, keyed by the address you pass to --account. Each
+# account needs a name and at least one service: mail (IMAP), dav (CalDAV
+# and CardDAV calendars and contacts), or graph (Outlook calendars).
+# "pim accounts" prints every account with its defaults filled in.
 
-[[accounts]]
-email = "you@example.com"  # the address you pass to --account
-name = "Your Name"         # sender name on drafts
-host = "imap.example.com"  # IMAP server
-# port = 993               # default 993
-# secure = true            # implicit TLS; default true
-# user = "you@example.com" # IMAP login; defaults to email
-# auth = "password"        # "password" or "microsoft"; default "password"
+[accounts."you@example.com"]
+name = "Your Name" # sender name on drafts
+mail = { host = "imap.example.com" }
+# Mail defaults: port = 993, secure = true (implicit TLS), user = the email,
+# auth = "password".
+dav = { url = "https://dav.example.com/" } # the server's DAV root
+# DAV defaults: user = the mail user, or the email without mail.
 
-# Calendars and contacts over CalDAV and CardDAV; leave out for mail only.
-# [accounts.dav]
-# url = "https://dav.example.com/" # the server's DAV root
-# user = "you@example.com"         # DAV login; defaults to the IMAP user
-
-# Outlook calendars through Microsoft Graph, read-only for now. Works with
-# either auth setting, next to [accounts.dav] or alone.
-# [accounts.graph]
-# client-id = "00000000-0000-0000-0000-000000000000" # your own app registration; defaults to pim's
-
-# Outlook.com and Microsoft 365 accounts sign in with Microsoft instead.
-# [[accounts]]
-# email = "you@outlook.com"
-# name = "Your Name"
-# host = "outlook.office365.com"
-# auth = "microsoft"
-# [accounts.graph]
+# Outlook.com and Microsoft 365 accounts sign in with Microsoft for mail.
+# graph = {} adds their Outlook calendars; it also works without mail.
+[accounts."you@outlook.com"]
+name = "Your Name"
+mail = { host = "outlook.office365.com", auth = "microsoft" }
+graph = {}
+# A tenant that allows only apps it registered sets its own app instead:
+# graph = { client-id = "00000000-0000-0000-0000-000000000000" }

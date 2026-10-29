@@ -37,11 +37,13 @@ describe('matchesContact', () => {
 const account: Account = {
   email: 'me@example.com',
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'me@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'me@example.com',
+    auth: 'password',
+  },
   dav: { url: 'https://dav.example.com/', user: 'me-dav' },
 };
 

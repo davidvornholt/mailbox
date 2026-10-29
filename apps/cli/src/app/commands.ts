@@ -2,6 +2,7 @@ import { Effect } from 'effect';
 import { defaultSearchLimit } from '../features/mail/schemas/mail';
 import { Imap } from '../features/mail/services/imap';
 import { checkAccounts } from '../features/mail/services/status';
+import { hasMail } from '../shared/accounts/account';
 import { AccountConfig } from '../shared/accounts/config';
 import type { CredentialKind } from '../shared/accounts/secrets';
 import { defineCommand, flag, UsageError } from '../shared/command-line';
@@ -43,19 +44,15 @@ const selectedAccounts = (only: string | undefined) =>
   );
 
 const accounts = defineCommand(
-  { name: 'accounts', summary: 'List configured accounts', flags: {} },
+  {
+    name: 'accounts',
+    summary: 'List configured accounts',
+    description:
+      'Print each account from the account config with its defaults filled in: mail (IMAP), dav (calendars and contacts) and graph (Outlook calendars) appear only for the services the account has.',
+    flags: {},
+  },
   (): CommandEffect =>
-    AccountConfig.pipe(
-      Effect.map((config) =>
-        json(
-          config.accounts.map(({ email, name, host }) => ({
-            email,
-            name,
-            host,
-          })),
-        ),
-      ),
-    ),
+    AccountConfig.pipe(Effect.map((config) => json(config.accounts))),
 );
 
 const status = defineCommand(
@@ -63,7 +60,7 @@ const status = defineCommand(
     name: 'status',
     summary: 'Check that each account can log in',
     description:
-      'Check that each account has credentials in the OS keyring and that it logs in: to mail, to calendars and contacts (dav) when the account has [accounts.dav], and to Outlook calendars (graph) when it has [accounts.graph]. Exits 1 when any login is not ready; its message says what to do.',
+      'Check that each account has credentials in the OS keyring and that it logs in to each service it configures: mail, calendars and contacts (dav), and Outlook calendars (graph). Exits 1 when any login is not ready; its message says what to do.',
     flags: {
       account: optionalAccount('Check only this account'),
       offline: flag.switch('Only check the keyring; do not connect'),
@@ -76,7 +73,7 @@ const status = defineCommand(
       const [mail, dav, graph] = yield* Effect.all(
         [
           checkAccounts(
-            selected.map(({ email }) => email),
+            selected.filter(hasMail).map(({ email }) => email),
             options,
           ),
           checkDavAccounts(selected, options),
@@ -110,7 +107,7 @@ const login = defineCommand(
     name: 'login',
     summary: 'Log in and store credentials in the OS keyring',
     description:
-      'Prompt for each mail password (or app password), or sign in with Microsoft for accounts with auth = "microsoft". Accounts with [accounts.dav] also prompt for their calendar and contacts password, and accounts with [accounts.graph] sign in with Microsoft for their Outlook calendars. Check each login against the server and store it in the OS keyring. Needs an interactive terminal: agents should ask the user to run it.',
+      'Log in to each service an account configures: prompt for the mail password (or app password), or sign in with Microsoft when mail has auth = "microsoft"; prompt for the dav password for calendars and contacts; and sign in with Microsoft in a browser on this computer for graph (Outlook calendars). Check each login against the server and store it in the OS keyring. Needs an interactive terminal: agents should ask the user to run it.',
     flags: {
       account: optionalAccount('Log in to only this account'),
       only: flag.optionalText(
@@ -134,8 +131,8 @@ const login = defineCommand(
         return yield* new UsageError({
           message:
             values.account === undefined
-              ? `pim login --only ${only}: no account has an [accounts.${only}] table in the account config`
-              : `pim login --only ${only}: ${values.account} has no [accounts.${only}] table in the account config`,
+              ? `pim login --only ${only}: no account has a ${only} table in the account config`
+              : `pim login --only ${only}: ${values.account} has no ${only} table in the account config`,
         });
       }
       const succeeded = yield* loginAccounts(steps);

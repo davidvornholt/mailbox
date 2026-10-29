@@ -1,6 +1,5 @@
 # Fixture consumed by config.test.ts via PIM_CONFIG.
 
-[[accounts]]
-email = "test@example.com"
-name  = "Test Account"
-host  = "imap.test.example"
+[accounts."test@example.com"]
+name = "Test Account"
+mail = { host = "imap.test.example" }

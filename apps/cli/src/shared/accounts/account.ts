@@ -1,4 +1,5 @@
 import { Effect, Result, Schema, SchemaIssue } from 'effect';
+import { MailNotConfiguredError } from '../errors/accounts';
 import { pimClientId } from '../graph/app';
 
 // Keyring service namespace for stored credentials. They live in the OS
@@ -7,8 +8,8 @@ export const keyringService = 'pim';
 
 // How an account logs in to IMAP: with a password, or with a Microsoft sign-in
 // for Outlook.com and Microsoft 365, which no longer accept passwords.
-const AccountAuth = Schema.Literals(['password', 'microsoft']);
-export type AccountAuth = typeof AccountAuth.Type;
+const MailAuth = Schema.Literals(['password', 'microsoft']);
+export type MailAuth = typeof MailAuth.Type;
 
 const implicitTlsPort = 993;
 const maxPort = 65_535;
@@ -22,6 +23,21 @@ const HttpsUrl = NonEmptyTrimmedString.check(
       'must be an https URL',
   ),
 );
+
+// IMAP access for mail.
+const MailEntry = Schema.Struct({
+  host: NonEmptyTrimmedString,
+  port: Schema.Int.check(
+    Schema.isBetween({ minimum: 1, maximum: maxPort }),
+  ).pipe(Schema.withDecodingDefaultKey(Effect.succeed(implicitTlsPort))),
+  secure: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(true)),
+  ),
+  user: Schema.optionalKey(NonEmptyTrimmedString),
+  auth: MailAuth.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed('password' as const)),
+  ),
+});
 
 // CalDAV and CardDAV access for calendars and contacts. url is the server's
 // DAV root, from which commands discover the calendars and address books.
@@ -37,53 +53,61 @@ const GraphEntry = Schema.Struct({
 }).pipe(Schema.encodeKeys({ clientId: 'client-id' }));
 
 const AccountEntry = Schema.Struct({
-  email: NonEmptyTrimmedString,
   name: NonEmptyTrimmedString,
-  host: NonEmptyTrimmedString,
-  port: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: maxPort }),
-  ).pipe(Schema.withDecodingDefaultKey(Effect.succeed(implicitTlsPort))),
-  secure: Schema.Boolean.pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed(true)),
-  ),
-  user: Schema.optionalKey(NonEmptyTrimmedString),
-  auth: AccountAuth.pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed('password' as const)),
-  ),
+  mail: Schema.optionalKey(MailEntry),
   dav: Schema.optionalKey(DavEntry),
   graph: Schema.optionalKey(GraphEntry),
-});
+}).check(
+  Schema.makeFilter(
+    (entry) =>
+      entry.mail !== undefined ||
+      entry.dav !== undefined ||
+      entry.graph !== undefined ||
+      'an account needs a mail, dav, or graph table',
+  ),
+);
 
 const formatIssue = SchemaIssue.makeFormatterDefault();
 
 const sameEmail = (left: string, right: string): boolean =>
   left.toLowerCase() === right.toLowerCase();
 
-// Emails must be unique because accounts are resolved by email.
+const emailKey = /^[^\s@]+@[^\s@]+$/u;
+
+// Rejects a key that is no email address and keys that differ only in case,
+// because lookups ignore case; TOML itself rejects exact duplicates. A key
+// that fails the record's key schema would only be reported as an excess
+// property, so the key schema accepts any string and this check names it.
+const accountKeysIssue = (emails: ReadonlyArray<string>): true | string => {
+  if (emails.length === 0) {
+    return 'needs at least one account, such as [accounts."you@example.com"]';
+  }
+  const malformed = emails.filter((email) => !emailKey.test(email));
+  if (malformed.length > 0) {
+    return `account keys must be email addresses, such as [accounts."you@example.com"], not ${malformed.map((email) => JSON.stringify(email)).join(', ')}`;
+  }
+  const duplicates = emails.filter(
+    (email, index) =>
+      emails.findIndex((other) => sameEmail(other, email)) !== index,
+  );
+  return (
+    duplicates.length === 0 ||
+    `account emails must be unique ignoring case: ${duplicates.join(', ')}`
+  );
+};
+
 const AccountsFile = Schema.Struct({
-  accounts: Schema.NonEmptyArray(AccountEntry).check(
-    Schema.makeFilter(
-      (accounts) =>
-        accounts.every(
-          (account, index) =>
-            accounts.findIndex((other) =>
-              sameEmail(other.email, account.email),
-            ) === index,
-        ) || 'account emails must be unique',
-    ),
+  accounts: Schema.Record(Schema.String, AccountEntry).check(
+    Schema.makeFilter((accounts) => accountKeysIssue(Object.keys(accounts))),
   ),
 });
 
-export type Account = {
-  readonly email: string;
-  readonly name: string;
+export type MailSettings = {
   readonly host: string;
   readonly port: number;
   readonly secure: boolean;
   readonly user: string;
-  readonly auth: AccountAuth;
-  readonly dav?: DavSettings;
-  readonly graph?: GraphSettings;
+  readonly auth: MailAuth;
 };
 
 export type DavSettings = {
@@ -94,6 +118,31 @@ export type DavSettings = {
 export type GraphSettings = {
   readonly clientId: string;
 };
+
+export type Account = {
+  readonly email: string;
+  readonly name: string;
+  readonly mail?: MailSettings;
+  readonly dav?: DavSettings;
+  readonly graph?: GraphSettings;
+};
+
+export type MailAccount = Account & { readonly mail: MailSettings };
+
+export const hasMail = (account: Account): account is MailAccount =>
+  account.mail !== undefined;
+
+export const mailAccount = (
+  account: Account,
+): Effect.Effect<MailAccount, MailNotConfiguredError> =>
+  hasMail(account)
+    ? Effect.succeed(account)
+    : Effect.fail(
+        new MailNotConfiguredError({
+          account: account.email,
+          message: `${account.email} has no mail: its account config has no mail table`,
+        }),
+      );
 
 export const findAccount = (
   accounts: ReadonlyArray<Account>,
@@ -111,14 +160,15 @@ export const decodeAccounts = (
     onExcessProperty: 'error',
   }).pipe(
     Result.map(({ accounts }) =>
-      accounts.map(({ dav, graph, ...account }) => {
-        const user = account.user ?? account.email;
+      Object.entries(accounts).map(([email, { name, mail, dav, graph }]) => {
+        const user = mail?.user ?? email;
         return {
-          ...account,
-          user,
+          email,
+          name,
+          ...(mail === undefined ? {} : { mail: { ...mail, user } }),
           ...(dav === undefined
             ? {}
-            : { dav: { ...dav, user: dav.user ?? user } }),
+            : { dav: { url: dav.url, user: dav.user ?? user } }),
           ...(graph === undefined
             ? {}
             : { graph: { clientId: graph.clientId ?? pimClientId } }),

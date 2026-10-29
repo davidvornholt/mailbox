@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
+import { hasMail, mailAccount } from '../../../shared/accounts/account';
 import { AccountConfig } from '../../../shared/accounts/config';
 import { Secrets } from '../../../shared/accounts/secrets';
 import { MicrosoftAuth } from '../../../shared/microsoft/auth';
@@ -74,9 +75,11 @@ const makeConnections = Effect.gen(function* () {
     refresh: (email: string, refreshToken: string) =>
       microsoft.refresh(imapApp, email, refreshToken),
   } as const;
+  const getMailAccount = (email: string) =>
+    config.getAccount(email).pipe(Effect.flatMap(mailAccount));
   const { clientFor, closeAll } = yield* makeWarmClientCache((email: string) =>
     Effect.gen(function* () {
-      const account = yield* config.getAccount(email);
+      const account = yield* getMailAccount(email);
       const login = yield* imapLoginFor(account, credentials);
       const client = makeClient(account, login);
       yield* connectClient(client, account);
@@ -89,7 +92,7 @@ const makeConnections = Effect.gen(function* () {
     );
   const searchMailboxWithinDeadline = (email: string, options: SearchOptions) =>
     Effect.gen(function* () {
-      const account = yield* config.getAccount(email);
+      const account = yield* getMailAccount(email);
       const login = yield* imapLoginFor(account, credentials);
       return yield* searchWithDedicatedClient(
         email,
@@ -101,6 +104,7 @@ const makeConnections = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => closeAll);
   return {
     config,
+    getMailAccount,
     clientFor,
     searchMailbox,
     searchMailboxWithinDeadline,
@@ -108,8 +112,13 @@ const makeConnections = Effect.gen(function* () {
 });
 
 const makeImap = Effect.gen(function* () {
-  const { config, clientFor, searchMailbox, searchMailboxWithinDeadline } =
-    yield* makeConnections;
+  const {
+    config,
+    getMailAccount,
+    clientFor,
+    searchMailbox,
+    searchMailboxWithinDeadline,
+  } = yield* makeConnections;
   return {
     verify: (email: string) => clientFor(email).pipe(Effect.asVoid),
     verifyLogin: (
@@ -117,7 +126,7 @@ const makeImap = Effect.gen(function* () {
       login: ImapLogin,
     ): Effect.Effect<void, MailError> =>
       Effect.gen(function* () {
-        const account = yield* config.getAccount(email);
+        const account = yield* getMailAccount(email);
         const client = makeClient(account, login);
         yield* Effect.acquireUseRelease(
           Effect.succeed(client),
@@ -132,10 +141,12 @@ const makeImap = Effect.gen(function* () {
       options: SearchOptionsInput,
     ): Effect.Effect<SearchResult, MailError> =>
       searchAccounts({
-        accounts: config.emails,
+        accounts: config.accounts
+          .filter(hasMail)
+          .map((configured) => configured.email),
         account: email,
         options,
-        validateAccount: config.getAccount,
+        validateAccount: getMailAccount,
         searchMailbox,
         searchMailboxWithinDeadline,
       }),

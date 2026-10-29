@@ -45,7 +45,7 @@ const show = defineCommand(
     name: 'calendar invitation',
     summary: 'Show the meeting an invitation email describes',
     description:
-      'Read the calendar data (text/calendar) of an email, such as an invitation, and show its iTIP method (request invites, cancel cancels, reply answers), its sequence, which grows with each update, and the meeting. "attendee" is the address the user is invited as. For an account with [accounts.dav], "copies" lists the meeting in the user\'s calendars with their answer there.',
+      'Read the calendar data (text/calendar) of an email, such as an invitation, and show its iTIP method (request invites, cancel cancels, reply answers), its sequence, which grows with each update, and the meeting. "attendee" is the address the user is invited as. For an account with a dav table, "copies" lists the meeting in the user\'s calendars with their answer there.',
     flags: messageFlags,
   },
   (values): CommandEffect =>
@@ -71,7 +71,7 @@ const importMessage = defineCommand(
     name: 'calendar import',
     summary: 'Put an invitation, update, or cancellation into the calendar',
     description:
-      'Apply an invitation (method request), an update of one, or a cancellation (method cancel) that the organizer emailed to the user\'s calendar, without answering it. pim writes so that the calendar server emails no one. A new meeting goes in with the user\'s answer open. For a meeting the calendar holds, pim keeps the user\'s answer and reminders, and opens the answer again when the organizer changed the meeting itself (a higher sequence). An invitation or cancellation for single occurrences changes only those. Prints {"import", "event"}: "created" or "updated", "current" when the calendar already holds this message or a newer one, and "absent" when it does not hold the meeting a cancellation is for. Needs [accounts.dav]: pim only reads Outlook calendars.',
+      'Apply an invitation (method request), an update of one, or a cancellation (method cancel) that the organizer emailed to the user\'s calendar, without answering it. pim writes so that the calendar server emails no one. A new meeting goes in with the user\'s answer open. For a meeting the calendar holds, pim keeps the user\'s answer and reminders, and opens the answer again when the organizer changed the meeting itself (a higher sequence). An invitation or cancellation for single occurrences changes only those. Prints {"import", "event"}: "created" or "updated", "current" when the calendar already holds this message or a newer one, and "absent" when it does not hold the meeting a cancellation is for. Needs a dav table: pim only reads Outlook calendars.',
     flags: { ...messageFlags, calendar: calendarFlag },
   },
   (values): CommandEffect =>
@@ -98,7 +98,7 @@ const respond = defineCommand(
     name: 'calendar respond',
     summary: 'Answer an invitation email',
     description:
-      'Answer an invitation (method request) as the attendee. For an account with [accounts.dav] whose server sends answers itself (RFC 6638), pim first brings the meeting in the calendar up to date with the invitation as "pim calendar import" does, and then gives the answer there, which makes the server email the organizer; pim does this only with --notify-organizer. An invitation for single occurrences answers only those. It prints {"reply": "server", "event"}, where event.organizer.scheduleStatus tells, when the server reports it, how it delivered the answer (1.x: sent or pending). pim refuses for an account with only [accounts.graph], as it only reads Outlook calendars. For any other account, pim saves the answer as a reply draft to the organizer, with the calendar data their calendar reads, and prints {"reply": "draft", "draft", "to", "subject"}. The user sends the draft from their mail app; pim writes no calendar then.',
+      'Answer an invitation (method request) as the attendee. For an account with a dav table whose server sends answers itself (RFC 6638), pim first brings the meeting in the calendar up to date with the invitation as "pim calendar import" does, and then gives the answer there, which makes the server email the organizer; pim does this only with --notify-organizer. An invitation for single occurrences answers only those. It prints {"reply": "server", "event"}, where event.organizer.scheduleStatus tells, when the server reports it, how it delivered the answer (1.x: sent or pending). pim refuses for an account with only a graph table, as it only reads Outlook calendars. For any other account, pim saves the answer as a reply draft to the organizer, with the calendar data their calendar reads, and prints {"reply": "draft", "draft", "to", "subject"}. The user sends the draft from their mail app; pim writes no calendar then.',
     flags: {
       ...messageFlags,
       partstat: flag.text(partstats.join('|'), 'The answer'),

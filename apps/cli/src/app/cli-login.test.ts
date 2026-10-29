@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import { Imap } from '../features/mail/services/imap';
 import type { ImapLogin } from '../features/mail/services/imap-client';
-import type { Account } from '../shared/accounts/account';
+import type { Account, MailAuth } from '../shared/accounts/account';
 import { type CredentialKind, Secrets } from '../shared/accounts/secrets';
 import { type Fetch, makeDavClient } from '../shared/dav/client';
 import { Dav } from '../shared/dav/dav';
@@ -18,14 +18,16 @@ import {
 import type { HiddenPromptResult } from '../shared/terminal';
 import { loginAccounts, loginSteps } from './cli-login';
 
-const accountFor = (email: string, auth: Account['auth']): Account => ({
+const accountFor = (email: string, auth: MailAuth): Account => ({
   email,
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: email,
-  auth,
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: email,
+    auth,
+  },
 });
 
 const davAccount: Account = {
@@ -244,8 +246,7 @@ describe('loginAccounts for Outlook calendars', () => {
     const result = await runLogin(
       [
         {
-          ...graphAccount,
-          auth: 'microsoft',
+          ...accountFor('me@example.com', 'microsoft'),
           graph: { clientId: '00000000-0000-4000-8000-000000000003' },
         },
       ],
@@ -290,7 +291,7 @@ describe('loginSteps', () => {
     ]);
   });
 
-  it('adds Outlook calendars for accounts with [accounts.graph]', () => {
+  it('adds Outlook calendars for accounts with a graph table', () => {
     expect(
       loginSteps(
         [mailOnly, { ...davAccount, ...graphAccount, dav: davAccount.dav }],
@@ -307,6 +308,13 @@ describe('loginSteps', () => {
         ({ account }) => account.email,
       ),
     ).toEqual(['me@example.com']);
+  });
+
+  it('skips mail for an account without a mail table', () => {
+    const { mail: _mail, ...graphOnly } = graphAccount;
+    expect(
+      loginSteps([graphOnly], undefined).map(({ service }) => service),
+    ).toEqual(['graph']);
   });
 
   it('limits the steps to one kind with only', () => {

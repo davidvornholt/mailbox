@@ -18,7 +18,7 @@ const refusal = {
   _tag: 'OutlookReadOnlyError',
   account: 'me@example.com',
   message:
-    'Outlook calendars are read-only in pim for now: me@example.com has only an [accounts.graph] table, so pim cannot create, change or delete its events or answer or import invitations into its calendars',
+    'Outlook calendars are read-only in pim for now: me@example.com has only a graph table, so pim cannot create, change or delete its events or answer or import invitations into its calendars',
 };
 
 describe('refuseOutlookWrite', () => {
@@ -51,7 +51,7 @@ describe('refuseOutlookWrite', () => {
     expect(error).toMatchObject({
       _tag: 'OutlookReadOnlyError',
       message:
-        'Outlook calendars are read-only in pim for now: event-1 is an Outlook event of me@example.com, so pim cannot change or delete it. pim writes only to the calendars of [accounts.dav], whose hrefs are paths',
+        'Outlook calendars are read-only in pim for now: event-1 is an Outlook event of me@example.com, so pim cannot change or delete it. pim writes only to the calendars of accounts with a dav table, whose hrefs are paths',
     });
     expect(requests).toEqual([]);
   });

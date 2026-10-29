@@ -5,7 +5,7 @@ import type { UnknownAccountError } from '../errors/accounts';
 import { DavNotConfiguredError } from '../errors/dav';
 
 // The accounts a contacts command reads: the one named, or every account with
-// [accounts.dav].
+// a dav table.
 export const davAccounts = (
   only: string | undefined,
 ): Effect.Effect<
@@ -24,7 +24,7 @@ export const davAccounts = (
     if (accounts.length === 0) {
       return yield* new DavNotConfiguredError({
         message:
-          'No account has contacts: add an [accounts.dav] table with the server DAV url to an account in the account config',
+          'No account has contacts: add a dav table with the server DAV url to an account in the account config',
       });
     }
     return accounts;

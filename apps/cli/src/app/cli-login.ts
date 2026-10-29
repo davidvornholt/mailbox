@@ -8,7 +8,11 @@ import {
   passwordLogin,
   storeVerifiedLogin,
 } from '../features/mail/services/login';
-import { type Account, keyringService } from '../shared/accounts/account';
+import {
+  type Account,
+  keyringService,
+  mailAccount,
+} from '../shared/accounts/account';
 import { type CredentialKind, Secrets } from '../shared/accounts/secrets';
 import { Dav } from '../shared/dav/dav';
 import { currentUserPrincipal } from '../shared/dav/discovery';
@@ -145,8 +149,9 @@ const loginMail = (
   prompt: HiddenPrompt,
 ): Effect.Effect<LoginAttempt, MailError, Imap | Secrets | MicrosoftAuth> =>
   Effect.gen(function* () {
+    const { mail } = yield* mailAccount(account);
     const obtained =
-      account.auth === 'password'
+      mail.auth === 'password'
         ? yield* promptPassword(
             `Mail password for ${account.email} (input hidden): `,
             prompt,
@@ -195,7 +200,7 @@ const loginDav = (
   Dav | Secrets
 > =>
   Effect.gen(function* () {
-    const user = account.dav?.user ?? account.user;
+    const user = account.dav?.user ?? account.email;
     const obtained = yield* promptPassword(
       `Calendar and contacts password for ${account.email} (DAV user ${user}, input hidden): `,
       prompt,
@@ -249,16 +254,15 @@ const logins = {
   graph: loginGraph,
 } as const satisfies Record<CredentialKind, unknown>;
 
-// Without `only`, each account logs in to mail and to the servers it
-// configures: [accounts.dav] for calendars and contacts, and
-// [accounts.graph] for Outlook calendars.
+// Without `only`, each account logs in to each service it configures: mail,
+// dav for calendars and contacts, and graph for Outlook calendars.
 export const loginSteps = (
   accounts: ReadonlyArray<Account>,
   only: CredentialKind | undefined,
 ): ReadonlyArray<LoginStep> =>
   accounts.flatMap((account) => {
     const configured: ReadonlyArray<CredentialKind> = [
-      'mail',
+      ...(account.mail === undefined ? [] : (['mail'] as const)),
       ...(account.dav === undefined ? [] : (['dav'] as const)),
       ...(account.graph === undefined ? [] : (['graph'] as const)),
     ];

@@ -50,7 +50,7 @@ export type CalendarReadError =
   | CalendarNotConfiguredError;
 
 // The accounts a calendar command reads: the one named, or every account
-// with [accounts.dav] or [accounts.graph].
+// with a dav or graph table.
 export const calendarAccounts = (
   only: string | undefined,
 ): Effect.Effect<
@@ -69,7 +69,7 @@ export const calendarAccounts = (
     if (accounts.length === 0) {
       return yield* new CalendarNotConfiguredError({
         message:
-          'No account has calendars: add an [accounts.dav] table with the server DAV url, or an [accounts.graph] table for Outlook, to an account in the account config',
+          'No account has calendars: add a dav table with the server DAV url, or a graph table for Outlook, to an account in the account config',
       });
     }
     return accounts;
@@ -77,7 +77,7 @@ export const calendarAccounts = (
 
 const notConfigured = (account: Account) =>
   new CalendarNotConfiguredError({
-    message: `${account.email} has no calendars: its account config has neither an [accounts.dav] table with the server DAV url nor an [accounts.graph] table for Outlook`,
+    message: `${account.email} has no calendars: its account config has neither a dav table with the server DAV url nor a graph table for Outlook`,
   });
 
 const notFound = (

@@ -8,11 +8,13 @@ import { writeDraft } from './draft';
 const account: Account = {
   email: 'sender@example.com',
   name: 'Example Sender',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'sender@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'sender@example.com',
+    auth: 'password',
+  },
 };
 
 const folders = [
