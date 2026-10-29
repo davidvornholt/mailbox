@@ -5,7 +5,7 @@ import {
 } from '../../../shared/errors/graph';
 import type { GraphClient } from '../../../shared/graph/client';
 import {
-  type CalendarDataError,
+  CalendarDataError,
   EventChangeError,
   EventHasAttendeesError,
   ReadOnlyCalendarError,
@@ -208,7 +208,7 @@ const unasked = (
 
 // Whom Microsoft Graph emails when the organizer changes or deletes the
 // event. A write to a series also reaches the attendees of its changed
-// occurrences.
+// occurrences, so a series whose changed occurrences are unknown fails.
 const notifiedBy = (
   client: GraphClient,
   event: GraphEvent,
@@ -218,8 +218,16 @@ const notifiedBy = (
 > =>
   event.type === 'seriesMaster'
     ? readGraphSeries(client, event.id).pipe(
-        Effect.flatMap((series) =>
-          Effect.forEach(series.exceptionOccurrences ?? [], decodeGraphEvent),
+        Effect.flatMap(({ exceptionOccurrences }) =>
+          exceptionOccurrences === null || exceptionOccurrences === undefined
+            ? Effect.fail(
+                new CalendarDataError({
+                  href: event.id,
+                  message:
+                    'Microsoft Graph did not list the changed occurrences of the series, so pim cannot tell whom the write would email',
+                }),
+              )
+            : Effect.forEach(exceptionOccurrences, decodeGraphEvent),
         ),
         Effect.map((changed) => [
           ...new Set(

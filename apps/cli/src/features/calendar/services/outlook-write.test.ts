@@ -228,6 +228,7 @@ describe('updateOutlookEvent', () => {
       [{ ...meeting, isOrganizer: false }, target({ notifyAttendees: true })],
       [{ ...stored, type: 'seriesMaster' }, target()],
       [seriesWithMeeting, target({ series: true })],
+      [{ ...stored, type: 'seriesMaster' }, target({ series: true })],
     ];
     const refusals = await Promise.all(
       cases.map(([event, refused]) =>
@@ -254,6 +255,7 @@ describe('updateOutlookEvent', () => {
       ['EventHasAttendeesError', []],
       ['EventChangeError', []],
       ['EventHasAttendeesError', []],
+      ['CalendarDataError', []],
     ]);
   });
 });
@@ -345,6 +347,7 @@ describe('deleteOutlookEvent', () => {
       [meeting, target()],
       [{ ...meeting, isOrganizer: false }, target({ notifyAttendees: true })],
       [seriesWithMeeting, target({ series: true })],
+      [{ ...stored, type: 'seriesMaster' }, target({ series: true })],
     ];
     const refusals = await Promise.all(
       cases.map(([event, refused]) =>
@@ -362,6 +365,7 @@ describe('deleteOutlookEvent', () => {
       ['EventHasAttendeesError', []],
       ['EventHasAttendeesError', []],
       ['EventHasAttendeesError', []],
+      ['CalendarDataError', []],
     ]);
   });
 });
