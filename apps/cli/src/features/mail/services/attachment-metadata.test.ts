@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
 import type { ImapFlow, MessageStructureObject } from 'imapflow';
-import { listAttachments } from './attachment-metadata';
+import { findAttachment, listAttachments } from './attachment-metadata';
 import { readMessage } from './imap-ops';
 
 const structure: MessageStructureObject = {
@@ -89,6 +89,30 @@ describe('message attachment metadata', () => {
         contentId: null,
       },
     ]);
+  });
+
+  it('finds the body of a message that is not multipart as part 1', () => {
+    // How imapflow describes a message that is one PDF: without a part.
+    const scan: MessageStructureObject = {
+      type: 'application/pdf',
+      parameters: { name: 'scan.pdf' },
+      encoding: 'base64',
+      size: 1234,
+      disposition: 'attachment',
+      dispositionParameters: { filename: 'scan.pdf' },
+    };
+    const attachment = {
+      part: '1',
+      filename: 'scan.pdf',
+      contentType: 'application/pdf',
+      size: 1234,
+      disposition: 'attachment',
+      contentId: null,
+    };
+
+    expect(listAttachments(scan)).toEqual([attachment]);
+    expect(findAttachment(scan, '1')).toEqual(attachment);
+    expect(listAttachments({ type: 'text/plain', size: 12 })).toEqual([]);
   });
 
   it('adds attachment metadata when reading a message', async () => {
