@@ -107,12 +107,16 @@ describe('searchMailboxes in one folder', () => {
       events,
     );
     const hits = await Effect.runPromise(
-      searchMailboxes(client, {
-        scope: 'folder',
-        folder: 'INBOX',
-        query: 'one',
-        limit: 20,
-      }),
+      searchMailboxes(
+        client,
+        {
+          scope: 'folder',
+          folder: 'INBOX',
+          query: 'one',
+          limit: 20,
+        },
+        false,
+      ),
     );
     expect(hits).toHaveLength(1);
     expect(hits[0]?.hit).toMatchObject({
@@ -146,7 +150,11 @@ describe('searchMailboxes in one folder', () => {
       events,
     );
     const hits = await Effect.runPromise(
-      searchMailboxes(client, { scope: 'folder', folder: 'INBOX', limit: 2 }),
+      searchMailboxes(
+        client,
+        { scope: 'folder', folder: 'INBOX', limit: 2 },
+        false,
+      ),
     );
     expect(hits.map(({ hit: { uid, subject } }) => ({ uid, subject }))).toEqual(
       [
@@ -185,7 +193,7 @@ describe('searchMailboxes across folders', () => {
       events,
     );
     const hits = await Effect.runPromise(
-      searchMailboxes(client, { scope: 'all', query: 'mail', limit: 2 }),
+      searchMailboxes(client, { scope: 'all', query: 'mail', limit: 2 }, false),
     );
     expect(hits.map(({ hit: { folder, uid } }) => ({ folder, uid }))).toEqual([
       { folder: 'Archive', uid: 2 },
@@ -240,7 +248,11 @@ describe('searchMailboxes across folders', () => {
     );
 
     const hits = await Effect.runPromise(
-      searchMailboxes(client, { scope: 'all', query: 'mail', limit: 20 }),
+      searchMailboxes(
+        client,
+        { scope: 'all', query: 'mail', limit: 20 },
+        false,
+      ),
     );
 
     expect(hits.map(({ hit: { uid } }) => uid)).toEqual([2, 1]);
@@ -267,12 +279,16 @@ describe('searchMailboxes when the server rejects the search', () => {
       const events: Array<string> = [];
       const error = await Effect.runPromise(
         Effect.flip(
-          searchMailboxes(rejectingClient([], events, result), {
-            scope: 'folder',
-            folder: 'INBOX',
-            query: 'missing',
-            limit: 20,
-          }),
+          searchMailboxes(
+            rejectingClient([], events, result),
+            {
+              scope: 'folder',
+              folder: 'INBOX',
+              query: 'missing',
+              limit: 20,
+            },
+            false,
+          ),
         ),
       );
       expect(error).toMatchObject({
@@ -290,12 +306,16 @@ describe('searchMailboxes when the server rejects the search', () => {
   ])('names the ASCII limit for non-ASCII text (%o)', async (criteria) => {
     const error = await Effect.runPromise(
       Effect.flip(
-        searchMailboxes(rejectingClient([], []), {
-          scope: 'folder',
-          folder: 'INBOX',
-          ...criteria,
-          limit: 20,
-        }),
+        searchMailboxes(
+          rejectingClient([], []),
+          {
+            scope: 'folder',
+            folder: 'INBOX',
+            ...criteria,
+            limit: 20,
+          },
+          false,
+        ),
       ),
     );
     expect(error.message).toBe(
@@ -312,7 +332,11 @@ describe('searchMailboxes when the server rejects the search', () => {
     );
     const error = await Effect.runPromise(
       Effect.flip(
-        searchMailboxes(client, { scope: 'all', query: 'André', limit: 20 }),
+        searchMailboxes(
+          client,
+          { scope: 'all', query: 'André', limit: 20 },
+          false,
+        ),
       ),
     );
     expect(error.message).toStartWith(

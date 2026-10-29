@@ -42,6 +42,7 @@ import { listFolders, readMessage } from './imap-ops';
 import { searchMailboxes } from './imap-search';
 import { makeWarmClientCache } from './imap-warm-cache';
 import { imapApp, imapLoginFor } from './login';
+import { skipsUnsubscribed } from './search-folders';
 
 export const searchWithDedicatedClient = <Client extends WarmClient, Result>(
   account: string,
@@ -87,9 +88,15 @@ const makeConnections = Effect.gen(function* () {
     }),
   );
   const searchMailbox = (email: string, options: SearchOptions) =>
-    Effect.flatMap(clientFor(email), (client) =>
-      searchMailboxes(client, options),
-    );
+    Effect.gen(function* () {
+      const account = yield* getMailAccount(email);
+      const client = yield* clientFor(email);
+      return yield* searchMailboxes(
+        client,
+        options,
+        skipsUnsubscribed(account),
+      );
+    });
   const searchMailboxWithinDeadline = (email: string, options: SearchOptions) =>
     Effect.gen(function* () {
       const account = yield* getMailAccount(email);
@@ -98,7 +105,8 @@ const makeConnections = Effect.gen(function* () {
         email,
         () => makeClient(account, login),
         (candidate) => connectClient(candidate, account),
-        (candidate) => searchMailboxes(candidate, options),
+        (candidate) =>
+          searchMailboxes(candidate, options, skipsUnsubscribed(account)),
       );
     });
   yield* Effect.addFinalizer(() => closeAll);
