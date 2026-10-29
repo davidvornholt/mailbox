@@ -159,7 +159,7 @@ const search = defineCommand(
     name: 'mail search',
     summary: 'Search messages, newest first',
     description:
-      'Search messages, newest first, across all accounts unless --account is given. Without --folder, each account searches its all-mail folder, or else every folder except Drafts, Junk, and Trash, and except the calendar, contacts, and other folders without mail that a Microsoft mailbox lists as unsubscribed. Each hit has an account, folder, uid, and uidValidity. Accounts that fail are listed under "failures" beside the other hits.',
+      'Search messages, newest first, across all accounts unless --account is given. Without --folder, each account searches its all-mail folder, or else every folder except Drafts, Junk, and Trash. A Microsoft mailbox also skips the folders it lists as unsubscribed, which include its calendar and contacts. Each hit has an account, folder, uid, and uidValidity. Accounts that fail are listed under "failures" beside the other hits.',
     flags: {
       account: optionalAccount('Search only this account'),
       query: flag.optionalText('text', 'Match subject, body, and addresses'),
