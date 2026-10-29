@@ -51,6 +51,13 @@ const meeting = {
   ],
 };
 
+// A series without attendees, one of whose occurrences is a meeting.
+const seriesWithMeeting = {
+  ...stored,
+  type: 'seriesMaster',
+  exceptionOccurrences: [{ ...meeting, id: 'event-2', type: 'exception' }],
+};
+
 const request: OutlookEventRequest = {
   title: 'Planning',
   span: {
@@ -220,6 +227,7 @@ describe('updateOutlookEvent', () => {
       [meeting, target()],
       [{ ...meeting, isOrganizer: false }, target({ notifyAttendees: true })],
       [{ ...stored, type: 'seriesMaster' }, target()],
+      [seriesWithMeeting, target({ series: true })],
     ];
     const refusals = await Promise.all(
       cases.map(([event, refused]) =>
@@ -245,6 +253,7 @@ describe('updateOutlookEvent', () => {
       ['EventHasAttendeesError', []],
       ['EventHasAttendeesError', []],
       ['EventChangeError', []],
+      ['EventHasAttendeesError', []],
     ]);
   });
 });
@@ -332,16 +341,15 @@ describe('deleteOutlookEvent', () => {
   });
 
   it('deletes no meeting it was not allowed to', async () => {
+    const cases: ReadonlyArray<readonly [GraphRoute, OutlookTarget]> = [
+      [meeting, target()],
+      [{ ...meeting, isOrganizer: false }, target({ notifyAttendees: true })],
+      [seriesWithMeeting, target({ series: true })],
+    ];
     const refusals = await Promise.all(
-      [meeting, { ...meeting, isOrganizer: false }].map((event) =>
+      cases.map(([event, refused]) =>
         run({ '/me/events/event-1': event }, (client) =>
-          Effect.flip(
-            deleteOutlookEvent(
-              client,
-              target({ notifyAttendees: !event.isOrganizer }),
-              berlin,
-            ),
-          ),
+          Effect.flip(deleteOutlookEvent(client, refused, berlin)),
         ),
       ),
     );
@@ -351,6 +359,7 @@ describe('deleteOutlookEvent', () => {
         writes(requests),
       ]),
     ).toEqual([
+      ['EventHasAttendeesError', []],
       ['EventHasAttendeesError', []],
       ['EventHasAttendeesError', []],
     ]);

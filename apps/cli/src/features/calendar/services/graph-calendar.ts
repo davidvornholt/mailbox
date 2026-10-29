@@ -164,14 +164,21 @@ export const graphSource = (
 
 export const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
 
+// The series master with id, with its changed occurrences.
+export const readGraphSeries = (
+  client: GraphClient,
+  id: string,
+): Effect.Effect<GraphSeries, GraphRequestError> =>
+  client.get(
+    `${eventPath(id)}?$select=${seriesFields}&$expand=exceptionOccurrences`,
+    GraphSeries,
+    { prefer: [utcTimes] },
+  );
+
 const seriesOf = (client: GraphClient, id: string, local: DateTime.TimeZone) =>
-  client
-    .get(
-      `${eventPath(id)}?$select=${seriesFields}&$expand=exceptionOccurrences`,
-      GraphSeries,
-      { prefer: [utcTimes] },
-    )
-    .pipe(Effect.flatMap((series) => seriesRecurrence(series, local)));
+  readGraphSeries(client, id).pipe(
+    Effect.flatMap((series) => seriesRecurrence(series, local)),
+  );
 
 // The event or occurrence with this id, with its etag.
 export const readGraphEvent = (

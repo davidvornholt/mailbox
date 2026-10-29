@@ -19,8 +19,15 @@ import {
   eventPreferences,
   graphDetailOf,
   readGraphEvent,
+  readGraphSeries,
 } from './graph-calendar';
-import { GraphCalendar, GraphEvent, graphSpan, nonEmpty } from './graph-events';
+import {
+  decodeGraphEvent,
+  GraphCalendar,
+  GraphEvent,
+  graphSpan,
+  nonEmpty,
+} from './graph-events';
 import {
   allowsTeams,
   changedAttendees,
@@ -199,6 +206,31 @@ const unasked = (
     message: `This makes Microsoft email ${emails.join(', ')} ${sends}. Pass --notify-attendees only if the user asked to tell them`,
   });
 
+// Whom Microsoft Graph emails when the organizer changes or deletes the
+// event. A write to a series also reaches the attendees of its changed
+// occurrences.
+const notifiedBy = (
+  client: GraphClient,
+  event: GraphEvent,
+): Effect.Effect<
+  ReadonlyArray<string>,
+  GraphRequestError | CalendarDataError
+> =>
+  event.type === 'seriesMaster'
+    ? readGraphSeries(client, event.id).pipe(
+        Effect.flatMap((series) =>
+          Effect.forEach(series.exceptionOccurrences ?? [], decodeGraphEvent),
+        ),
+        Effect.map((changed) => [
+          ...new Set(
+            [event, ...changed].flatMap(({ attendees }) =>
+              notifiedAttendees({ organizer: event.organizer, attendees }),
+            ),
+          ),
+        ]),
+      )
+    : Effect.succeed(notifiedAttendees(event));
+
 export type OutlookChanges = EventChanges & OutlookOptions;
 
 const changedTimes = (
@@ -284,7 +316,7 @@ export const updateOutlookEvent = (
     }
     const guests = yield* changedGuests(event, changes);
     const notified = [
-      ...new Set([...notifiedAttendees(event), ...guests.added]),
+      ...new Set([...(yield* notifiedBy(client, event)), ...guests.added]),
     ];
     if (notified.length > 0 && !target.notifyAttendees) {
       return yield* unasked(event, notified, 'an update');
@@ -333,7 +365,7 @@ export const deleteOutlookEvent = (
         `Remove it without telling anyone with "pim calendar respond --account ${client.account} --href ${event.id} --partstat declined", leaving out --notify-organizer`,
       );
     }
-    const notified = notifiedAttendees(event);
+    const notified = yield* notifiedBy(client, event);
     if (notified.length > 0 && !target.notifyAttendees) {
       return yield* unasked(event, notified, 'a cancellation');
     }
