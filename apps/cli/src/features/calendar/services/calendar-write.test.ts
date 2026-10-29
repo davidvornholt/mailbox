@@ -213,15 +213,20 @@ describe('updateEvent and deleteEvent', () => {
 });
 
 describe('invitations of an account with only Outlook calendars', () => {
-  it('point to the meeting Outlook put into the calendar', async () => {
+  const microsoftMail = {
+    host: 'outlook.office365.com',
+    port: 993,
+    secure: true,
+    user: 'me@example.com',
+    auth: 'microsoft',
+  } as const;
+  const accept = { partstat: 'accepted', notifyOrganizer: true } as const;
+
+  it('point to the meeting Outlook put into the calendar of a mailbox Microsoft hosts', async () => {
+    const account: Account = { ...graphAccount, mail: microsoftMail };
     const writes: ReadonlyArray<Effect.Effect<unknown, unknown, Dav>> = [
-      importInvitation(graphAccount, received(), undefined, berlin),
-      answerInvitation(
-        graphAccount,
-        received(),
-        { partstat: 'accepted', notifyOrganizer: true },
-        berlin,
-      ),
+      importInvitation(account, received(), undefined, berlin),
+      answerInvitation(account, received(), accept, berlin),
     ];
     const refused = await Promise.all(
       writes.map((write) => failsOnFakeDav(calendarRoutes, write)),
@@ -234,5 +239,30 @@ describe('invitations of an account with only Outlook calendars', () => {
       });
       expect(requests).toEqual([]);
     }
+  });
+
+  it('get a reply draft when Outlook does not receive the mail', async () => {
+    const account: Account = {
+      ...graphAccount,
+      mail: { ...microsoftMail, host: 'imap.example.com', auth: 'password' },
+    };
+    const answered = await succeedsOnFakeDav(
+      calendarRoutes,
+      answerInvitation(account, received(), accept, berlin),
+    );
+    expect(answered.value).toMatchObject({
+      _tag: 'Reply',
+      reply: { to: 'boss@example.com' },
+    });
+    expect(answered.requests).toEqual([]);
+    const imported = await failsOnFakeDav(
+      calendarRoutes,
+      importInvitation(account, received(), undefined, berlin),
+    );
+    expect(imported.error).toMatchObject({ _tag: 'InvitationError' });
+    expect(imported.error.message).toStartWith(
+      'Microsoft Graph cannot add an emailed invitation',
+    );
+    expect(imported.requests).toEqual([]);
   });
 });

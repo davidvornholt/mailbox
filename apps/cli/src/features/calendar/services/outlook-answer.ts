@@ -99,11 +99,14 @@ export const answerOutlookMeeting = (
   });
 
 // Outlook puts the invitations of an account with a graph table into its
-// calendar itself, and pim answers them there.
+// calendar itself, and pim answers them there, when Microsoft also hosts the
+// mailbox, which then signs in to IMAP with Microsoft.
 export const outlookInvitation = (
   account: Account,
 ): Effect.Effect<void, InvitationError> =>
-  account.graph === undefined || account.dav !== undefined
+  account.graph === undefined ||
+  account.dav !== undefined ||
+  account.mail?.auth !== 'microsoft'
     ? Effect.void
     : Effect.fail(
         new InvitationError({
