@@ -122,6 +122,14 @@ const runLogin = async (
         return device;
       }),
     awaitSignIn: () => options.signIn ?? Effect.never,
+    signInInBrowser: (app: MicrosoftApp, email: string) =>
+      Effect.sync(() => {
+        apps.push(`${app.credential} ${app.clientId} ${email}`);
+        return {
+          url: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=pim',
+          awaitSignIn: options.signIn ?? Effect.never,
+        };
+      }),
   } as unknown as typeof MicrosoftAuth.Service;
 
   const succeeded = await Effect.runPromise(
@@ -223,9 +231,9 @@ describe('loginAccounts for Outlook calendars', () => {
       only: 'graph',
     });
 
-    expect(result.apps).toEqual([`graph ${pimClientId}`]);
+    expect(result.apps).toEqual([`graph ${pimClientId} me@example.com`]);
     expect(result.prompts).toEqual([
-      'Sign in to Microsoft for the Outlook calendars of me@example.com: open https://login.microsoft.com/device and enter the code ABCD1234\nWaiting for sign-in (press Enter to skip): ',
+      'Sign in to Microsoft for the Outlook calendars of me@example.com: open this link in a browser on this computer:\nhttps://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=pim\nWaiting for sign-in (press Enter to skip): ',
     ]);
     expect(result.graphLogins).toEqual(['Bearer graph-access']);
     expect(result.stored).toEqual(['graph:graph-refresh']);
@@ -246,7 +254,7 @@ describe('loginAccounts for Outlook calendars', () => {
 
     expect(result.apps).toEqual([
       'mail 9e5f94bc-e8a4-4e73-b8be-63364c29d753',
-      'graph 00000000-0000-4000-8000-000000000003',
+      'graph 00000000-0000-4000-8000-000000000003 me@example.com',
     ]);
     expect(result.stored).toEqual([
       'mail:graph-refresh',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect } from 'effect';
+import { Effect, Result } from 'effect';
 import {
   type DeviceCode,
   freshAccessToken,
@@ -141,6 +141,74 @@ describe('awaitSignIn', () => {
     expect(await failureMessage(auth.awaitSignIn(app, device))).toContain(
       'no refresh token',
     );
+  });
+});
+
+describe('signInInBrowser', () => {
+  // Starts the sign-in, lets the browser call the redirect with the given
+  // query, and returns the authorization request and what pim made of it.
+  const signIn = (
+    redirectQuery: (authorize: URLSearchParams) => string,
+    ...replies: ReadonlyArray<Reply>
+  ) => {
+    const { calls, auth } = replying(...replies);
+    return Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { url, awaitSignIn } = yield* auth.signInInBrowser(
+            app,
+            'me@example.com',
+          );
+          const authorize = new URL(url).searchParams;
+          const redirect = authorize.get('redirect_uri') ?? '';
+          const favicon = yield* Effect.promise(() =>
+            fetch(`${redirect}/favicon.ico`),
+          );
+          yield* Effect.promise(() =>
+            fetch(`${redirect}/?${redirectQuery(authorize)}`),
+          );
+          const result = yield* Effect.result(awaitSignIn);
+          return { authorize, favicon: favicon.status, result, calls };
+        }),
+      ),
+    );
+  };
+
+  it('redeems the code with the PKCE verifier at the same redirect', async () => {
+    const { authorize, favicon, result, calls } = await signIn(
+      (query) => `code=granted&state=${query.get('state')}`,
+      tokens(['access_token', 'access'], ['refresh_token', 'refresh']),
+    );
+
+    expect(authorize.get('login_hint')).toBe('me@example.com');
+    expect(authorize.get('code_challenge_method')).toBe('S256');
+    expect(favicon).toBe(404);
+    expect(result).toEqual(
+      Result.succeed({ accessToken: 'access', refreshToken: 'refresh' }),
+    );
+    const form = calls[0]?.form;
+    expect(form?.get('grant_type')).toBe('authorization_code');
+    expect(form?.get('code')).toBe('granted');
+    expect(form?.get('redirect_uri')).toBe(authorize.get('redirect_uri'));
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(form?.get('code_verifier') ?? ''),
+    );
+    expect(Buffer.from(digest).toString('base64url')).toBe(
+      authorize.get('code_challenge') ?? '',
+    );
+  });
+
+  it("reports Microsoft's reason when the browser returns an error", async () => {
+    const { result, calls } = await signIn(
+      (query) =>
+        `error=access_denied&error_description=The+user+declined.&state=${query.get('state')}`,
+    );
+
+    expect(Result.isFailure(result) && result.failure.message).toBe(
+      'Microsoft sign-in failed: The user declined.',
+    );
+    expect(calls).toEqual([]);
   });
 });
 

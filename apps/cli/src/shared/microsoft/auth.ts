@@ -1,6 +1,7 @@
 import { Context, Duration, Effect, Layer, Result, Schema } from 'effect';
 import { type CredentialKind, loginCommand } from '../accounts/secrets';
 import { OAuthError } from '../errors/accounts';
+import { type AuthorizationGrant, startBrowserSignIn } from './browser-sign-in';
 
 // The app registration pim signs in as, the access it asks for, and the
 // keyring credential that keeps the sign-in.
@@ -21,6 +22,7 @@ const deviceCodeGrant = 'urn:ietf:params:oauth:grant-type:device_code';
 const defaultIntervalSeconds = 5;
 const slowDownSeconds = 5;
 const requestTimeoutSeconds = 30;
+const browserSignInMinutes = 15;
 // Microsoft appends trace and correlation IDs that only matter to its support.
 const traceSuffix = /\s+Trace ID:.*$/su;
 
@@ -135,6 +137,18 @@ const post = <A>(
     ),
   );
 
+const withRefreshToken = ({
+  accessToken,
+  refreshToken,
+}: typeof TokenResponse.Type): Effect.Effect<MicrosoftTokens, OAuthError> =>
+  refreshToken === undefined
+    ? Effect.fail(
+        new OAuthError({
+          message: 'Microsoft sign-in returned no refresh token.',
+        }),
+      )
+    : Effect.succeed({ accessToken, refreshToken });
+
 const requestDeviceCode = (
   postForm: PostForm,
   app: MicrosoftApp,
@@ -201,14 +215,7 @@ const pollForTokens = (
               );
           }
         },
-        onSuccess: ({ accessToken, refreshToken }) =>
-          refreshToken === undefined
-            ? Effect.fail(
-                new OAuthError({
-                  message: 'Microsoft sign-in returned no refresh token.',
-                }),
-              )
-            : Effect.succeed({ accessToken, refreshToken }),
+        onSuccess: withRefreshToken,
       }),
     ),
   );
@@ -230,6 +237,62 @@ const awaitSignIn = (
           }),
         ),
     }),
+  );
+
+const redeem = (
+  postForm: PostForm,
+  app: MicrosoftApp,
+  grant: AuthorizationGrant,
+): Effect.Effect<MicrosoftTokens, OAuthError> =>
+  post(
+    postForm,
+    'token',
+    new URLSearchParams([
+      ['grant_type', 'authorization_code'],
+      ['client_id', app.clientId],
+      ['code', grant.code],
+      ['redirect_uri', grant.redirectUri],
+      ['code_verifier', grant.verifier],
+      ['scope', app.scope],
+    ]),
+    TokenResponse,
+  ).pipe(
+    Effect.flatMap(
+      Result.match({
+        onFailure: (failure) =>
+          Effect.fail(
+            new OAuthError({
+              message: `Microsoft sign-in failed: ${failure.description}`,
+            }),
+          ),
+        onSuccess: withRefreshToken,
+      }),
+    ),
+  );
+
+// The link to open, and the sign-in that finishes once Microsoft redirects
+// the browser back. The local server stops when the scope closes.
+const signInInBrowser = (
+  postForm: PostForm,
+  app: MicrosoftApp,
+  loginHint: string,
+) =>
+  startBrowserSignIn(app, loginHint).pipe(
+    Effect.map(({ url, grant }) => ({
+      url,
+      awaitSignIn: grant.pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.minutes(browserSignInMinutes),
+          orElse: () =>
+            Effect.fail(
+              new OAuthError({
+                message: `Sign-in did not finish within ${browserSignInMinutes} minutes. Run pim login again.`,
+              }),
+            ),
+        }),
+        Effect.flatMap((granted) => redeem(postForm, app, granted)),
+      ),
+    })),
   );
 
 // Microsoft rotates refresh tokens and may omit the new one, in which case the
@@ -271,13 +334,19 @@ const refresh = (
     ),
   );
 
-// Sign-in uses the device code flow: the user opens a Microsoft page in any
-// browser and enters a short code, so it also works over SSH.
+// The device code flow lets the user open a Microsoft page in any browser
+// and enter a short code, so it also works over SSH. For personal accounts,
+// Microsoft fails it on pim's own app with an expired-code error after the
+// password, apparently because the page cannot ask to confirm an app from an
+// unverified publisher. That app signs in through a browser on this computer
+// instead.
 export const makeMicrosoftAuth = (postForm: PostForm) =>
   ({
     requestDeviceCode: (app: MicrosoftApp) => requestDeviceCode(postForm, app),
     awaitSignIn: (app: MicrosoftApp, device: DeviceCode) =>
       awaitSignIn(postForm, app, device),
+    signInInBrowser: (app: MicrosoftApp, loginHint: string) =>
+      signInInBrowser(postForm, app, loginHint),
     refresh: (app: MicrosoftApp, account: string, refreshToken: string) =>
       refresh(postForm, app, account, refreshToken),
   }) as const;

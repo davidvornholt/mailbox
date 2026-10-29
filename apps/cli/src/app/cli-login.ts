@@ -83,7 +83,33 @@ const promptPassword = (
 
 // The user signs in on Microsoft's page while the terminal waits. As at the
 // password prompt, Enter skips the account and Ctrl-C cancels the rest.
-const signInWithMicrosoft = (
+const awaitMicrosoftSignIn = (
+  question: string,
+  prompt: HiddenPrompt,
+  signIn: Effect.Effect<MicrosoftTokens, OAuthError>,
+): Effect.Effect<Obtained<MicrosoftTokens>, OAuthError> =>
+  // The prompt goes first: Effect 4 starts racers in order and stops starting
+  // them once one has finished, and the instructions must always show.
+  Effect.raceFirst(
+    prompt(`${question}\nWaiting for sign-in (press Enter to skip): `).pipe(
+      Effect.map(
+        (result): Obtained<MicrosoftTokens> =>
+          result._tag === 'cancelled'
+            ? cancelled
+            : { _tag: 'skipped', message: 'sign-in skipped.' },
+      ),
+    ),
+    signIn.pipe(
+      Effect.map(
+        (tokens): Obtained<MicrosoftTokens> => ({
+          _tag: 'obtained',
+          login: tokens,
+        }),
+      ),
+    ),
+  );
+
+const signInWithDeviceCode = (
   app: MicrosoftApp,
   greeting: string,
   prompt: HiddenPrompt,
@@ -91,29 +117,28 @@ const signInWithMicrosoft = (
   Effect.gen(function* () {
     const microsoft = yield* MicrosoftAuth;
     const device = yield* microsoft.requestDeviceCode(app);
-    // The prompt goes first: Effect 4 starts racers in order and stops
-    // starting them once one has finished, and the code must always show.
-    return yield* Effect.raceFirst(
-      prompt(
-        `${greeting}: open ${device.verificationUri} and enter the code ${device.userCode}\nWaiting for sign-in (press Enter to skip): `,
-      ).pipe(
-        Effect.map(
-          (result): Obtained<MicrosoftTokens> =>
-            result._tag === 'cancelled'
-              ? cancelled
-              : { _tag: 'skipped', message: 'sign-in skipped.' },
-        ),
-      ),
-      microsoft.awaitSignIn(app, device).pipe(
-        Effect.map(
-          (tokens): Obtained<MicrosoftTokens> => ({
-            _tag: 'obtained',
-            login: tokens,
-          }),
-        ),
-      ),
+    return yield* awaitMicrosoftSignIn(
+      `${greeting}: open ${device.verificationUri} and enter the code ${device.userCode}`,
+      prompt,
+      microsoft.awaitSignIn(app, device),
     );
   });
+
+const signInInBrowser = (
+  app: MicrosoftApp,
+  email: string,
+  greeting: string,
+  prompt: HiddenPrompt,
+): Effect.Effect<Obtained<MicrosoftTokens>, OAuthError, MicrosoftAuth> =>
+  Effect.gen(function* () {
+    const microsoft = yield* MicrosoftAuth;
+    const signIn = yield* microsoft.signInInBrowser(app, email);
+    return yield* awaitMicrosoftSignIn(
+      `${greeting}: open this link in a browser on this computer:\n${signIn.url}`,
+      prompt,
+      signIn.awaitSignIn,
+    );
+  }).pipe(Effect.scoped);
 
 const loginMail = (
   account: Account,
@@ -133,7 +158,7 @@ const loginMail = (
                   : result,
             ),
           )
-        : yield* signInWithMicrosoft(
+        : yield* signInWithDeviceCode(
             imapApp,
             `Sign in to Microsoft as ${account.email}`,
             prompt,
@@ -198,8 +223,9 @@ const loginGraph = (
 > =>
   Effect.gen(function* () {
     const settings = yield* graphSettings(account);
-    const obtained = yield* signInWithMicrosoft(
+    const obtained = yield* signInInBrowser(
       graphApp(settings.clientId),
+      account.email,
       `Sign in to Microsoft for the Outlook calendars of ${account.email}`,
       prompt,
     );
