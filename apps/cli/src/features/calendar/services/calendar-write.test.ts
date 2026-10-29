@@ -18,6 +18,7 @@ import {
 import {
   calendarRoutes,
   eventRoutes,
+  type Routes,
   single,
   target,
 } from './caldav-write.fixture';
@@ -138,12 +139,19 @@ describe('createEvent', () => {
   });
 
   it('writes nowhere for a name both servers know or Teams on CalDAV', async () => {
+    const cases: ReadonlyArray<
+      readonly [
+        Routes,
+        ReadonlyArray<string>,
+        { readonly calendar: string; readonly teams?: boolean },
+      ]
+    > = [
+      [calendarRoutes, ['work'], { calendar: 'Work' }],
+      [twoWorkCalendars, ['Work'], { calendar: 'Work' }],
+      [calendarRoutes, ['Calendar'], { calendar: 'Work', teams: true }],
+    ];
     const refusals = await Promise.all(
-      [
-        [calendarRoutes, ['work'], { calendar: 'Work' }],
-        [twoWorkCalendars, ['Work'], { calendar: 'Work' }],
-        [calendarRoutes, ['Calendar'], { calendar: 'Work', teams: true }],
-      ].map(async ([routes, graphNames, wanted]) => {
+      cases.map(async ([routes, graphNames, wanted]) => {
         const { effect, requests } = onBoth(
           graphNames,
           createEvent(both, { ...request, ...wanted }, berlin),
