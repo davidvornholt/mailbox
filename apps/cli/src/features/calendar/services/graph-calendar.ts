@@ -44,9 +44,10 @@ const summaryFields =
 const detailFields =
   'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId';
 // Microsoft Graph returns the cancelled and changed occurrences of a series
-// only on a request for its series master.
+// only on a request for its series master, and gives the changed ones only
+// the fields selected for the master.
 const seriesFields =
-  'subject,location,attendees,recurrence,cancelledOccurrences';
+  'id,subject,start,end,isAllDay,isCancelled,location,attendees,type,originalStart,recurrence,cancelledOccurrences';
 const pageSize = 100;
 
 // Includes the calendars shared with the user that they added in Outlook.

@@ -2,7 +2,9 @@ import { type DateTime, Effect, Schema } from 'effect';
 import { convert } from 'html-to-text';
 import type { CalendarDataError } from '../errors/errors';
 import type { Attendee, EventChange, EventDetail } from '../schemas/calendar';
+import { daysBetween, parseCalendarDate } from './calendar-dates';
 import { optional } from './event-fields';
+import { formatUtcStamp } from './ical-time';
 import {
   decodeGraphEvent,
   GraphEvent,
@@ -29,6 +31,7 @@ type RecurrencePattern = typeof RecurrencePattern.Type;
 
 const RecurrenceRange = Schema.Struct({
   type: Schema.String,
+  startDate: nullable(Schema.String),
   endDate: nullable(Schema.String),
   numberOfOccurrences: nullable(Schema.Number),
 });
@@ -42,11 +45,16 @@ export const PatternedRecurrence = Schema.Struct({
 
 type PatternedRecurrence = typeof PatternedRecurrence.Type;
 
-const { subject, location, attendees } = GraphEvent.fields;
+const { id, subject, start, end, isAllDay, location, attendees } =
+  GraphEvent.fields;
 
 // A series master, with what pim compares its exceptions with.
 export const GraphSeries = Schema.Struct({
+  id,
   subject,
+  start,
+  end,
+  isAllDay,
   location,
   attendees,
   recurrence: nullable(PatternedRecurrence),
@@ -129,12 +137,38 @@ const patternParts = (pattern: RecurrencePattern): ReadonlyArray<string> => {
   }
 };
 
-// Microsoft Graph ends a series on a day in the series' time zone rather
-// than at an instant, so UNTIL is a date.
-const rangeParts = (range: RecurrenceRange): ReadonlyArray<string> => {
+const dayMs = 86_400_000;
+const untilMarginMs = 43_200_000;
+
+// Microsoft Graph ends a series on a day in the series' time zone. An all-day
+// series keeps that day as UNTIL. A timed one needs an instant, which pim puts
+// 12 hours after the series' time of day on that day: past the last
+// occurrence even when daylight saving time moved it, and before the next.
+const until = (
+  range: RecurrenceRange,
+  first: Pick<GraphSpan, 'allDay' | 'startMs'>,
+): string | undefined => {
+  const from = parseCalendarDate(range.startDate ?? '');
+  const to = parseCalendarDate(range.endDate ?? '');
+  if (to === undefined) {
+    return undefined;
+  }
+  // Microsoft Graph always sends startDate; the date alone still ends the
+  // series without it.
+  return first.allDay || from === undefined
+    ? range.endDate?.replaceAll('-', '')
+    : formatUtcStamp(
+        first.startMs + daysBetween(from, to) * dayMs + untilMarginMs,
+      );
+};
+
+const rangeParts = (
+  range: RecurrenceRange,
+  first: Pick<GraphSpan, 'allDay' | 'startMs'>,
+): ReadonlyArray<string> => {
   switch (range.type) {
     case 'endDate':
-      return part('UNTIL', range.endDate?.replaceAll('-', ''));
+      return part('UNTIL', until(range, first));
     case 'numbered':
       return part('COUNT', range.numberOfOccurrences);
     default:
@@ -142,12 +176,12 @@ const rangeParts = (range: RecurrenceRange): ReadonlyArray<string> => {
   }
 };
 
-// The iCalendar RRULE of a Microsoft Graph recurrence, or nothing for a
-// pattern pim does not know.
-export const recurrenceRule = ({
-  pattern,
-  range,
-}: PatternedRecurrence): string | undefined => {
+// The iCalendar RRULE of a Microsoft Graph recurrence whose series starts at
+// first, or nothing for a pattern pim does not know.
+export const recurrenceRule = (
+  { pattern, range }: PatternedRecurrence,
+  first: Pick<GraphSpan, 'allDay' | 'startMs'>,
+): string | undefined => {
   const frequency = frequencies.get(pattern.type);
   if (frequency === undefined) {
     return undefined;
@@ -156,7 +190,7 @@ export const recurrenceRule = ({
     `FREQ=${frequency}`,
     ...((pattern.interval ?? 1) > 1 ? part('INTERVAL', pattern.interval) : []),
     ...patternParts(pattern),
-    ...rangeParts(range),
+    ...rangeParts(range, first),
   ].join(';');
 };
 
@@ -227,27 +261,30 @@ export const seriesRecurrence = (
   series: GraphSeries,
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail['recurrence'], CalendarDataError> =>
-  Effect.forEach(series.exceptionOccurrences ?? [], (item) =>
-    decodeGraphEvent(item).pipe(
-      Effect.flatMap((exception) =>
-        graphSpan(exception, local).pipe(
-          Effect.map((span) => changeOf(exception, span, series, local)),
-        ),
-      ),
-    ),
-  ).pipe(
-    Effect.map((changed) =>
-      series.recurrence === undefined || series.recurrence === null
-        ? undefined
-        : {
-            ...optional('rule', recurrenceRule(series.recurrence)),
-            excluded: cancelledDays(series.cancelledOccurrences ?? []),
-            changed: changed.toSorted((left, right) =>
-              left.recurrenceId.localeCompare(right.recurrenceId),
+  Effect.gen(function* () {
+    if (series.recurrence === undefined || series.recurrence === null) {
+      return undefined;
+    }
+    const first = yield* graphSpan(series, local);
+    const changed = yield* Effect.forEach(
+      series.exceptionOccurrences ?? [],
+      (item) =>
+        decodeGraphEvent(item).pipe(
+          Effect.flatMap((exception) =>
+            graphSpan(exception, local).pipe(
+              Effect.map((span) => changeOf(exception, span, series, local)),
             ),
-          },
-    ),
-  );
+          ),
+        ),
+    );
+    return {
+      ...optional('rule', recurrenceRule(series.recurrence, first)),
+      excluded: cancelledDays(series.cancelledOccurrences ?? []),
+      changed: changed.toSorted((left, right) =>
+        left.recurrenceId.localeCompare(right.recurrenceId),
+      ),
+    };
+  });
 
 // pim asks for the description as text; this covers a server that sends
 // HTML anyway.

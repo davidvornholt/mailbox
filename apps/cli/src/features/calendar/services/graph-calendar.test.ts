@@ -222,13 +222,28 @@ const occurrence = {
 };
 
 const seriesMaster = {
-  subject: 'Planning',
+  ...timed(
+    'series-1',
+    'Planning',
+    '2026-11-03T13:00:00.0000000',
+    '2026-11-03T14:00:00.0000000',
+  ),
+  type: 'seriesMaster',
   recurrence: {
     pattern: { type: 'weekly', interval: 1, daysOfWeek: ['tuesday'] },
     range: { type: 'noEnd' },
   },
   cancelledOccurrences: ['OID.series-1.2026-11-10'],
-  exceptionOccurrences: [],
+  exceptionOccurrences: [
+    {
+      ...occurrence,
+      id: 'exc-1',
+      type: 'exception',
+      start: utc('2026-11-24T15:00:00.0000000'),
+      end: utc('2026-11-24T16:00:00.0000000'),
+      originalStart: '2026-11-24T13:00:00Z',
+    },
+  ],
 };
 
 describe('graphEvent', () => {
@@ -245,7 +260,13 @@ describe('graphEvent', () => {
         recurrence: {
           rule: 'FREQ=WEEKLY;BYDAY=TU',
           excluded: ['2026-11-10'],
-          changed: [],
+          changed: [
+            {
+              recurrenceId: '2026-11-24T14:00:00+01:00',
+              start: '2026-11-24T16:00:00+01:00',
+              end: '2026-11-24T17:00:00+01:00',
+            },
+          ],
         },
       },
     });
@@ -255,7 +276,7 @@ describe('graphEvent', () => {
         prefer: 'outlook.timezone="UTC", outlook.body-content-type="text"',
       },
       {
-        url: `${root}/me/events/series-1?$select=subject,location,attendees,recurrence,cancelledOccurrences&$expand=exceptionOccurrences`,
+        url: `${root}/me/events/series-1?$select=id,subject,start,end,isAllDay,isCancelled,location,attendees,type,originalStart,recurrence,cancelledOccurrences&$expand=exceptionOccurrences`,
         prefer: 'outlook.timezone="UTC"',
       },
     ]);

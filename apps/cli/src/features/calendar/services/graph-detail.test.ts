@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { DateTime, Effect, Result } from 'effect';
+import ICAL from 'ical.js';
 import {
   cancelledDays,
   type GraphSeries,
@@ -17,11 +18,30 @@ const utc = (time: string) => ({ dateTime: time, timeZone: 'UTC' });
 const rule = (
   pattern: Record<string, unknown>,
   range: Record<string, unknown> = { type: 'noEnd' },
+  first: Parameters<typeof recurrenceRule>[1] = {
+    allDay: true,
+    startMs: Date.parse('2026-11-03T00:00:00Z'),
+  },
 ) =>
-  recurrenceRule({
-    pattern: { interval: 1, ...pattern },
-    range,
-  } as Parameters<typeof recurrenceRule>[0]);
+  recurrenceRule(
+    {
+      pattern: { interval: 1, ...pattern },
+      range,
+    } as Parameters<typeof recurrenceRule>[0],
+    first,
+  );
+
+// The starts of the occurrences an iCalendar rule gives from start.
+const expand = (recur: string, start: string): ReadonlyArray<string> => {
+  const iterator = ICAL.Recur.fromString(recur).iterator(
+    ICAL.Time.fromDateTimeString(start),
+  );
+  const starts: Array<string> = [];
+  for (let next = iterator.next(); next !== null; next = iterator.next()) {
+    starts.push(next.toString());
+  }
+  return starts;
+};
 
 describe('recurrenceRule', () => {
   it('maps daily and weekly patterns', () => {
@@ -41,9 +61,23 @@ describe('recurrenceRule', () => {
           daysOfWeek: ['friday'],
           firstDayOfWeek: 'sunday',
         },
-        { type: 'endDate', endDate: '2026-12-31' },
+        { type: 'endDate', startDate: '2026-11-06', endDate: '2026-12-31' },
       ),
     ).toBe('FREQ=WEEKLY;INTERVAL=2;BYDAY=FR;WKST=SU;UNTIL=20261231');
+  });
+
+  it('ends a timed series after the occurrence on its last day', () => {
+    const daily = rule(
+      { type: 'daily' },
+      { type: 'endDate', startDate: '2026-11-03', endDate: '2026-11-05' },
+      { allDay: false, startMs: Date.parse('2026-11-03T13:00:00Z') },
+    );
+    expect(daily).toBe('FREQ=DAILY;UNTIL=20261106T010000Z');
+    expect(expand(daily ?? '', '2026-11-03T13:00:00Z')).toEqual([
+      '2026-11-03T13:00:00Z',
+      '2026-11-04T13:00:00Z',
+      '2026-11-05T13:00:00Z',
+    ]);
   });
 
   it('maps monthly patterns', () => {
@@ -108,6 +142,10 @@ const attendee = (address: string, response: string) => ({
 });
 
 const series: GraphSeries = {
+  id: 'series-1',
+  start: utc('2026-11-03T13:00:00.0000000'),
+  end: utc('2026-11-03T14:00:00.0000000'),
+  isAllDay: false,
   subject: 'Planning',
   location: { displayName: 'Room 4' },
   attendees: [attendee('bo@example.com', 'accepted')],
