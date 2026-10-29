@@ -12,19 +12,19 @@
   "dependencies": {
     "@napi-rs/keyring": "^2.1.2",
     "@xmldom/xmldom": "^0.9.12",
-    "effect": "^4.0.6",
+    "effect": "^4.1.0",
     "html-to-text": "^10.0.1",
     "ical.js": "^2.2.1",
-    "imapflow": "^2.9.1",
-    "mailparser": "^3.12.4",
-    "nodemailer": "^10.2.1"
+    "imapflow": "^2.10.0",
+    "mailparser": "^3.14.1",
+    "nodemailer": "^10.3.1"
   },
   "devDependencies": {
     "@davidvornholt/typescript-config": "workspace:*",
     "@types/bun": "^1.4.3",
     "@types/html-to-text": "^9.0.4",
     "@types/mailparser": "^3.9.0",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",
     "typescript": "7.0.2"
   }
