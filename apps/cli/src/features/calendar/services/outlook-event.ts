@@ -5,7 +5,7 @@ import {
   parseCalendarDate,
 } from './calendar-dates';
 import { newAttendees } from './event-attendees';
-import type { EventSpan } from './event-times';
+import { type EventSpan, parseEventTime } from './event-times';
 import type { EventText } from './event-write';
 import type {
   GraphAttendee,
@@ -21,6 +21,18 @@ import { formatInstant } from './ical-time';
 export const teamsProvider = 'teamsForBusiness';
 
 const wallClockLength = 'YYYY-MM-DDTHH:mm:ss'.length;
+
+// A wall-clock time in the zone, or in UTC when a DST change repeats it and
+// it would name two instants.
+const graphTime = (ms: number, zone: DateTime.TimeZone) => {
+  const wallClock = formatInstant(ms, zone).slice(0, wallClockLength);
+  return Result.isSuccess(parseEventTime(wallClock, zone))
+    ? { dateTime: wallClock, timeZone: DateTime.zoneToString(zone) }
+    : {
+        dateTime: new Date(ms).toISOString().slice(0, wallClockLength),
+        timeZone: 'UTC',
+      };
+};
 
 // Microsoft Graph keeps an event's times as wall-clock times in the zone
 // Outlook shows it in. An all-day event lasts from midnight of its first day
@@ -40,12 +52,10 @@ export const graphTimes = (span: EventSpan, zone: DateTime.TimeZone) => {
       },
     };
   }
-  const wallClock = (ms: number) =>
-    formatInstant(ms, zone).slice(0, wallClockLength);
   return {
     isAllDay: false,
-    start: { dateTime: wallClock(span.startMs), timeZone },
-    end: { dateTime: wallClock(span.endMs), timeZone },
+    start: graphTime(span.startMs, zone),
+    end: graphTime(span.endMs, zone),
   };
 };
 

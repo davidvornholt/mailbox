@@ -43,6 +43,23 @@ describe('graphTimes', () => {
     });
   });
 
+  it('writes a time the DST change repeats in UTC', () => {
+    expect(
+      graphTimes(
+        {
+          _tag: 'Times',
+          startMs: Date.parse('2026-10-25T02:30:00+02:00'),
+          endMs: Date.parse('2026-10-25T02:30:00+01:00'),
+        },
+        berlin,
+      ),
+    ).toEqual({
+      isAllDay: false,
+      start: { dateTime: '2026-10-25T00:30:00', timeZone: 'UTC' },
+      end: { dateTime: '2026-10-25T01:30:00', timeZone: 'UTC' },
+    });
+  });
+
   it('ends an all-day event at midnight after its last day', () => {
     expect(
       graphTimes(
