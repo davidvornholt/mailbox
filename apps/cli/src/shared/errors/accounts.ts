@@ -29,3 +29,16 @@ export class KeyringError extends Schema.TaggedError<KeyringError>()(
     message: Schema.String,
   },
 ) {}
+
+// A Microsoft sign-in failed or Microsoft rejected the stored one.
+export class OAuthError extends Schema.TaggedError<OAuthError>()('OAuthError', {
+  message: Schema.String,
+}) {}
+
+// Raised when a command across several accounts fails for every one of them.
+export class AccountsError extends Schema.TaggedError<AccountsError>()(
+  'AccountsError',
+  {
+    message: Schema.String,
+  },
+) {}

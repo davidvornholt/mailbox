@@ -44,6 +44,7 @@ import {
   type InvitationReply,
   invitationReply,
 } from './invitation-reply-email';
+import { refuseOutlookWrite } from './read-only';
 import { userAddresses } from './scheduling';
 
 export type InvitationAnswer = {
@@ -268,6 +269,7 @@ export const answerInvitation = (
 ): Effect.Effect<AnswerOutcome, InvitationAnswerError, Dav> =>
   Effect.gen(function* () {
     const { partstat } = answer;
+    yield* refuseOutlookWrite(account);
     if (account.dav === undefined) {
       const parties = yield* partiesFor(invitation, [account.email]);
       return yield* replyOutcome(account, invitation, parties, partstat);

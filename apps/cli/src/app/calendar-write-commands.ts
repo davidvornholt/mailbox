@@ -105,7 +105,7 @@ const create = defineCommand(
   {
     name: 'calendar create',
     summary: 'Create an event',
-    description: `Create an event in one calendar. Without --attendee, pim writes no organizer, attendees, or alarms, so the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href, when the server returns one its etag, and, when the server reports it, how it delivered each invitation.`,
+    description: `Create an event in one calendar. Without --attendee, pim writes no organizer, attendees, or alarms, so the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. Timed events are stored in UTC. Prints the event with its href, when the server returns one its etag, and, when the server reports it, how it delivered each invitation. pim writes only to the calendars of [accounts.dav]; it only reads Outlook calendars.`,
     flags: {
       account: accountFlag,
       calendar: flag.text('name|href', 'Calendar from "pim calendar list"'),
@@ -183,7 +183,7 @@ const update = defineCommand(
   {
     name: 'calendar update',
     summary: 'Change an event',
-    description: `Change the title, times, location, description, or attendees of an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim does not move recurring events. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one.`,
+    description: `Change the title, times, location, description, or attendees of an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim does not move recurring events. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one. pim only reads Outlook events.`,
     flags: {
       ...targetFlags,
       title: flag.optionalText('text', 'New title'),
@@ -247,7 +247,7 @@ const remove = defineCommand(
     name: 'calendar delete',
     summary: 'Delete an event',
     description:
-      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. Deleting a meeting the user organizes makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees and only on a server that sends cancellations itself. pim deletes the user\'s copy of a meeting someone else organizes without telling anyone, and refuses to with --notify-attendees, which would tell the organizer the user declined; "pim calendar respond" declines. Prints the deleted event.',
+      'Delete an event. Pass the etag from "pim calendar get"; if the event changed since, nothing is deleted. A recurring event is deleted with all its occurrences, and only with --series. Deleting a meeting the user organizes makes the server email the attendees a cancellation, so pim deletes one only with --notify-attendees and only on a server that sends cancellations itself. pim deletes the user\'s copy of a meeting someone else organizes without telling anyone, and refuses to with --notify-attendees, which would tell the organizer the user declined; "pim calendar respond" declines. pim only reads Outlook events. Prints the deleted event.',
     flags: targetFlags,
   },
   (values): CommandEffect =>

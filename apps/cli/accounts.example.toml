@@ -15,9 +15,15 @@ host = "imap.example.com"  # IMAP server
 # url = "https://dav.example.com/" # the server's DAV root
 # user = "you@example.com"         # DAV login; defaults to the IMAP user
 
+# Outlook calendars through Microsoft Graph, read-only for now. Works with
+# either auth setting, next to [accounts.dav] or alone.
+# [accounts.graph]
+# client-id = "00000000-0000-0000-0000-000000000000" # your own app registration; defaults to pim's
+
 # Outlook.com and Microsoft 365 accounts sign in with Microsoft instead.
 # [[accounts]]
 # email = "you@outlook.com"
 # name = "Your Name"
 # host = "outlook.office365.com"
 # auth = "microsoft"
+# [accounts.graph]

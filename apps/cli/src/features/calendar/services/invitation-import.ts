@@ -31,6 +31,7 @@ import {
   leftToCalendarApp,
   leftToServer,
 } from './invitation-merge';
+import { refuseOutlookWrite } from './read-only';
 import { userAddresses } from './scheduling';
 
 export type InvitationImportError = CalendarWriteError | InvitationError;
@@ -323,6 +324,7 @@ export const importInvitation = (
   local: DateTime.TimeZone,
 ): Effect.Effect<ImportOutcome, InvitationImportError, Dav> =>
   Effect.gen(function* () {
+    yield* refuseOutlookWrite(account);
     if (account.dav === undefined) {
       return yield* new InvitationError({
         message: `${account.email} has no calendar server ([accounts.dav] in accounts.toml), so pim cannot add the meeting to a calendar`,

@@ -1,4 +1,5 @@
 import { Effect, Result, Schema, SchemaIssue } from 'effect';
+import { pimClientId } from '../graph/app';
 
 // Keyring service namespace for stored credentials. They live in the OS
 // keyring (see secrets.ts), keyed by credential kind and account email.
@@ -29,6 +30,12 @@ const DavEntry = Schema.Struct({
   user: Schema.optionalKey(NonEmptyTrimmedString),
 });
 
+// Outlook calendars through Microsoft Graph. client-id replaces pim's own app
+// registration, as for a tenant that allows only apps it registered.
+const GraphEntry = Schema.Struct({
+  clientId: Schema.optionalKey(NonEmptyTrimmedString),
+}).pipe(Schema.encodeKeys({ clientId: 'client-id' }));
+
 const AccountEntry = Schema.Struct({
   email: NonEmptyTrimmedString,
   name: NonEmptyTrimmedString,
@@ -44,6 +51,7 @@ const AccountEntry = Schema.Struct({
     Schema.withDecodingDefaultKey(Effect.succeed('password' as const)),
   ),
   dav: Schema.optionalKey(DavEntry),
+  graph: Schema.optionalKey(GraphEntry),
 });
 
 const formatIssue = SchemaIssue.makeFormatterDefault();
@@ -75,11 +83,16 @@ export type Account = {
   readonly user: string;
   readonly auth: AccountAuth;
   readonly dav?: DavSettings;
+  readonly graph?: GraphSettings;
 };
 
 export type DavSettings = {
   readonly url: string;
   readonly user: string;
+};
+
+export type GraphSettings = {
+  readonly clientId: string;
 };
 
 export const findAccount = (
@@ -98,7 +111,7 @@ export const decodeAccounts = (
     onExcessProperty: 'error',
   }).pipe(
     Result.map(({ accounts }) =>
-      accounts.map(({ dav, ...account }) => {
+      accounts.map(({ dav, graph, ...account }) => {
         const user = account.user ?? account.email;
         return {
           ...account,
@@ -106,6 +119,9 @@ export const decodeAccounts = (
           ...(dav === undefined
             ? {}
             : { dav: { ...dav, user: dav.user ?? user } }),
+          ...(graph === undefined
+            ? {}
+            : { graph: { clientId: graph.clientId ?? pimClientId } }),
         };
       }),
     ),

@@ -1,10 +1,12 @@
 import { Effect, Schema } from 'effect';
 import type {
   CalendarDataError,
+  CalendarNotConfiguredError,
   CalendarNotFoundError,
   EventChangeError,
   EventHasAttendeesError,
   InvitationError,
+  OutlookReadOnlyError,
   ReadOnlyCalendarError,
   SchedulingUnsupportedError,
 } from '../features/calendar/errors/errors';
@@ -16,16 +18,18 @@ import type {
 } from '../features/contacts/errors/errors';
 import type { MailError } from '../features/mail/errors/errors';
 import type { Imap } from '../features/mail/services/imap';
-import type { MicrosoftAuth } from '../features/mail/services/microsoft-auth';
 import { AccountConfig } from '../shared/accounts/config';
 import type { Secrets } from '../shared/accounts/secrets';
 import type { UsageError } from '../shared/command-line';
 import type { Dav, DavSessionError } from '../shared/dav/dav';
+import type { AccountsError } from '../shared/errors/accounts';
 import type {
-  DavAccountsError,
   DavNotConfiguredError,
   DavRequestError,
 } from '../shared/errors/dav';
+import type { GraphRequestError } from '../shared/errors/graph';
+import type { Graph, GraphSessionError } from '../shared/graph/graph';
+import type { MicrosoftAuth } from '../shared/microsoft/auth';
 
 export class FileError extends Schema.TaggedError<FileError>()('FileError', {
   message: Schema.String,
@@ -53,13 +57,17 @@ export type CommandError =
   | DavSessionError
   | DavRequestError
   | DavNotConfiguredError
-  | DavAccountsError
+  | GraphSessionError
+  | GraphRequestError
+  | AccountsError
+  | CalendarNotConfiguredError
   | CalendarDataError
   | CalendarNotFoundError
   | ReadOnlyCalendarError
   | EventHasAttendeesError
   | EventChangeError
   | SchedulingUnsupportedError
+  | OutlookReadOnlyError
   | InvitationError
   | ContactDataError
   | AddressBookNotFoundError
@@ -71,7 +79,7 @@ export type CommandError =
 export type CommandEffect = Effect.Effect<
   Outcome,
   CommandError,
-  AccountConfig | Secrets | MicrosoftAuth | Imap | Dav
+  AccountConfig | Secrets | MicrosoftAuth | Imap | Dav | Graph
 >;
 
 // Accounts match case-insensitively; services and the keyring use the

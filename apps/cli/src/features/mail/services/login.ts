@@ -1,8 +1,22 @@
 import { Effect } from 'effect';
 import type { Account } from '../../../shared/accounts/account';
+import {
+  freshAccessToken,
+  type MicrosoftApp,
+  type MicrosoftTokens,
+} from '../../../shared/microsoft/auth';
 import type { MailError } from '../errors/errors';
 import type { ImapLogin } from './imap-client';
-import type { MicrosoftTokens } from './microsoft-auth';
+
+// Microsoft issues tokens only to registered apps. IMAP borrows Mozilla
+// Thunderbird's public client ID, which works for personal and most work or
+// school accounts without an app registration of its own, so Microsoft's
+// consent screen names Thunderbird.
+export const imapApp: MicrosoftApp = {
+  clientId: '9e5f94bc-e8a4-4e73-b8be-63364c29d753',
+  scope: 'https://outlook.office.com/IMAP.AccessAsUser.All offline_access',
+  credential: 'mail',
+};
 
 type VerifyLogin = (
   email: string,
@@ -50,10 +64,8 @@ export const storeVerifiedLogin = (
     Effect.andThen(storeCredential(email, login.credential)),
   );
 
-// Turns the stored credential into an IMAP login. A Microsoft access token
-// lasts about an hour, so each command trades the stored refresh token for a
-// new one. Keeping the rotated refresh token extends the sign-in, which would
-// otherwise expire 90 days after `pim login`.
+// Turns the stored credential, a password or a Microsoft refresh token, into
+// an IMAP login.
 export const imapLoginFor = (
   account: Account,
   credentials: {
@@ -67,9 +79,10 @@ export const imapLoginFor = (
     if (account.auth === 'password') {
       return { pass: credential };
     }
-    const tokens = yield* credentials.refresh(account.email, credential);
-    if (tokens.refreshToken !== credential) {
-      yield* credentials.store(account.email, tokens.refreshToken);
-    }
-    return { accessToken: tokens.accessToken };
+    const accessToken = yield* freshAccessToken(credential, {
+      refresh: (refreshToken) =>
+        credentials.refresh(account.email, refreshToken),
+      store: (refreshToken) => credentials.store(account.email, refreshToken),
+    });
+    return { accessToken };
   });

@@ -58,6 +58,27 @@ describe('decodeAccounts', () => {
     expect(plain).not.toHaveProperty('dav');
   });
 
+  it("adds Graph settings that use pim's app unless client-id replaces it", () => {
+    const [account, own] = decoded({
+      accounts: [
+        { ...minimalAccount, graph: {} },
+        {
+          ...minimalAccount,
+          email: 'c@example.com',
+          graph: { 'client-id': '00000000-0000-4000-8000-000000000002' },
+        },
+      ],
+    });
+    expect(account?.graph).toEqual({
+      clientId: '161e31aa-5a5e-4f0f-a4c5-9660cf121f18',
+    });
+    expect(own?.graph).toEqual({
+      clientId: '00000000-0000-4000-8000-000000000002',
+    });
+    const [plain] = decoded({ accounts: [minimalAccount] });
+    expect(plain).not.toHaveProperty('graph');
+  });
+
   it('rejects an empty accounts list', () => {
     expect(rejection({ accounts: [] })).not.toBe('accepted');
   });
@@ -84,6 +105,16 @@ describe('decodeAccounts', () => {
       'a misspelled DAV key',
       { ...minimalAccount, dav: { url: 'https://dav.b.com/', usr: 'x' } },
       'usr',
+    ],
+    [
+      'an unknown Graph key',
+      { ...minimalAccount, graph: { tenant: 'x' } },
+      'tenant',
+    ],
+    [
+      'an empty Graph client-id',
+      { ...minimalAccount, graph: { 'client-id': '' } },
+      'client-id',
     ],
   ])('rejects %s and names the field', (_case, account, field) => {
     expect(rejection({ accounts: [account] })).toContain(field);

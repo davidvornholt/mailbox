@@ -82,7 +82,7 @@ const mailtoScheme = /^mailto:/iu;
 const address = (property: ICAL.Property): string =>
   String(property.getFirstValue() ?? '').replace(mailtoScheme, '');
 
-const optional = <K extends string, V>(
+export const optional = <K extends string, V>(
   key: K,
   value: V | undefined,
 ): { [P in K]?: V } =>

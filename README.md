@@ -2,7 +2,7 @@
 
 > Built on [davidvornholt/standards](https://github.com/davidvornholt/standards).
 
-`pim` is a command-line tool for AI agents to work with a person's information. Its `mail` commands search, read, and draft email in IMAP accounts. It works with any IMAP server that accepts a password or app password, and with Outlook.com and Microsoft 365 accounts through Microsoft sign-in. They never send mail: drafts go to the account's drafts folder, where you review and send them from your mail client. Its `calendar` commands read calendars over CalDAV and create, change, and delete events. They invite attendees, and change or cancel meetings the user organizes, only with `--notify-attendees`; the calendar server then emails the attendees, and pim refuses servers that do not. They answer invitations the user received by email: through the calendar server when it sends the answer itself, which pim does only with `--notify-organizer`, and otherwise as a reply draft. Its `contacts` commands read address books over CardDAV and create, change, and delete contacts.
+`pim` is a command-line tool for AI agents to work with a person's information. Its `mail` commands search, read, and draft email in IMAP accounts. It works with any IMAP server that accepts a password or app password, and with Outlook.com and Microsoft 365 accounts through Microsoft sign-in. They never send mail: drafts go to the account's drafts folder, where you review and send them from your mail client. Its `calendar` commands read calendars over CalDAV and Outlook calendars through Microsoft Graph, and create, change, and delete events in CalDAV calendars. They invite attendees, and change or cancel meetings the user organizes, only with `--notify-attendees`; the calendar server then emails the attendees, and pim refuses servers that do not. They answer invitations the user received by email: through the calendar server when it sends the answer itself, which pim does only with `--notify-organizer`, and otherwise as a reply draft. Its `contacts` commands read address books over CardDAV and create, change, and delete contacts.
 
 ## Install
 
@@ -22,7 +22,7 @@ pim login
 pim status
 ```
 
-`pim login` checks each login against the server before storing it in the keyring service `pim` under `mail:<email>`, and the calendar and contacts login under `dav:<email>`. On Linux this needs a running Secret Service provider such as gnome-keyring.
+`pim login` checks each login against the server before storing it in the keyring service `pim` under `mail:<email>`, the calendar and contacts login under `dav:<email>`, and the Microsoft sign-in for Outlook calendars under `graph:<email>`. On Linux this needs a running Secret Service provider such as gnome-keyring.
 
 ### Calendars and contacts
 
@@ -32,7 +32,13 @@ An account gets calendars and contacts from an `[accounts.dav]` table with the s
 
 Microsoft does not accept passwords over IMAP, so these accounts need `auth = "microsoft"` and `host = "outlook.office365.com"`. `pim login` then shows a code to enter at Microsoft's sign-in page in any browser and stores the resulting refresh token instead of a password. Each command trades it for a short-lived access token, and a sign-in lasts until Microsoft revokes it or it goes 90 days unused.
 
-pim uses Mozilla Thunderbird's public app ID, so Microsoft's consent screen asks you to allow Thunderbird. Work or school tenants can block IMAP, device code sign-in, or apps that an administrator has not approved; in that case, ask the administrator.
+For mail, pim uses Mozilla Thunderbird's public app ID, so Microsoft's consent screen asks you to allow Thunderbird. Work or school tenants can block IMAP, device code sign-in, or apps that an administrator has not approved; in that case, ask the administrator.
+
+### Outlook calendars
+
+An `[accounts.graph]` table gives an account its Outlook calendars through Microsoft Graph, including calendars others shared with the user. pim only reads Outlook calendars for now.
+
+For Outlook calendars, pim uses its own app ID and asks for read and write access to the user's calendars and those shared with them, so that writing later needs no new consent. `pim login` shows a link for it instead of a code. Open the link in a browser on the same computer, because Microsoft returns the sign-in to pim through a local address. Work or school tenants that do not let users consent to apps from unverified publishers need an administrator to consent to pim once. Alternatively, register an app in the tenant and set its application ID as `client-id` in `[accounts.graph]`. pim signs in through Microsoft's `common` endpoint, so the app must support accounts in any organizational directory, plus personal Microsoft accounts for Outlook.com; it must also have the mobile and desktop redirect URI `http://localhost` and the delegated Microsoft Graph permissions `Calendars.ReadWrite` and `Calendars.ReadWrite.Shared`.
 
 ## Use
 

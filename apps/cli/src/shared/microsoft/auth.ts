@@ -1,24 +1,28 @@
 import { Context, Duration, Effect, Layer, Result, Schema } from 'effect';
-import { loginCommand } from '../../../shared/accounts/secrets';
-import { OAuthError } from '../errors/errors';
+import { type CredentialKind, loginCommand } from '../accounts/secrets';
+import { OAuthError } from '../errors/accounts';
+import { type AuthorizationGrant, startBrowserSignIn } from './browser-sign-in';
 
-// Microsoft issues tokens only to registered apps. pim borrows Mozilla
-// Thunderbird's public client ID, which works for personal and most work or
-// school accounts without an app registration of its own, so Microsoft's
-// consent screen names Thunderbird.
-const clientId = '9e5f94bc-e8a4-4e73-b8be-63364c29d753';
+// The app registration pim signs in as, the access it asks for, and the
+// keyring credential that keeps the sign-in.
+export type MicrosoftApp = {
+  readonly clientId: string;
+  // offline_access adds the refresh token that later commands trade for
+  // access tokens, so one sign-in lasts until Microsoft revokes it.
+  readonly scope: string;
+  readonly credential: CredentialKind;
+};
+
 // The common tenant accepts both personal (Outlook.com) and work or school
 // (Microsoft 365) accounts.
 const endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0';
-// offline_access adds the refresh token that later commands trade for access
-// tokens, so one sign-in lasts until Microsoft revokes it.
-const scope = 'https://outlook.office.com/IMAP.AccessAsUser.All offline_access';
 const deviceCodeGrant = 'urn:ietf:params:oauth:grant-type:device_code';
 // RFC 8628: poll every 5 seconds unless told otherwise, and 5 seconds slower
 // after each slow_down.
 const defaultIntervalSeconds = 5;
 const slowDownSeconds = 5;
 const requestTimeoutSeconds = 30;
+const browserSignInMinutes = 15;
 // Microsoft appends trace and correlation IDs that only matter to its support.
 const traceSuffix = /\s+Trace ID:.*$/su;
 
@@ -133,15 +137,28 @@ const post = <A>(
     ),
   );
 
+const withRefreshToken = ({
+  accessToken,
+  refreshToken,
+}: typeof TokenResponse.Type): Effect.Effect<MicrosoftTokens, OAuthError> =>
+  refreshToken === undefined
+    ? Effect.fail(
+        new OAuthError({
+          message: 'Microsoft sign-in returned no refresh token.',
+        }),
+      )
+    : Effect.succeed({ accessToken, refreshToken });
+
 const requestDeviceCode = (
   postForm: PostForm,
+  app: MicrosoftApp,
 ): Effect.Effect<DeviceCode, OAuthError> =>
   post(
     postForm,
     'devicecode',
     new URLSearchParams([
-      ['client_id', clientId],
-      ['scope', scope],
+      ['client_id', app.clientId],
+      ['scope', app.scope],
     ]),
     DeviceCodeResponse,
   ).pipe(
@@ -160,6 +177,7 @@ const requestDeviceCode = (
 
 const pollForTokens = (
   postForm: PostForm,
+  app: MicrosoftApp,
   device: DeviceCode,
   intervalSeconds: number,
 ): Effect.Effect<MicrosoftTokens, OAuthError> =>
@@ -170,7 +188,7 @@ const pollForTokens = (
         'token',
         new URLSearchParams([
           ['grant_type', deviceCodeGrant],
-          ['client_id', clientId],
+          ['client_id', app.clientId],
           ['device_code', device.deviceCode],
         ]),
         TokenResponse,
@@ -181,10 +199,11 @@ const pollForTokens = (
         onFailure: (failure) => {
           switch (failure.error) {
             case 'authorization_pending':
-              return pollForTokens(postForm, device, intervalSeconds);
+              return pollForTokens(postForm, app, device, intervalSeconds);
             case 'slow_down':
               return pollForTokens(
                 postForm,
+                app,
                 device,
                 intervalSeconds + slowDownSeconds,
               );
@@ -196,14 +215,7 @@ const pollForTokens = (
               );
           }
         },
-        onSuccess: ({ accessToken, refreshToken }) =>
-          refreshToken === undefined
-            ? Effect.fail(
-                new OAuthError({
-                  message: 'Microsoft sign-in returned no refresh token.',
-                }),
-              )
-            : Effect.succeed({ accessToken, refreshToken }),
+        onSuccess: withRefreshToken,
       }),
     ),
   );
@@ -211,9 +223,10 @@ const pollForTokens = (
 // Waits until the user enters the code and signs in, or the code expires.
 const awaitSignIn = (
   postForm: PostForm,
+  app: MicrosoftApp,
   device: DeviceCode,
 ): Effect.Effect<MicrosoftTokens, OAuthError> =>
-  pollForTokens(postForm, device, device.intervalSeconds).pipe(
+  pollForTokens(postForm, app, device, device.intervalSeconds).pipe(
     Effect.timeoutOrElse({
       duration: Duration.seconds(device.expiresInSeconds),
       orElse: () =>
@@ -226,10 +239,67 @@ const awaitSignIn = (
     }),
   );
 
+const redeem = (
+  postForm: PostForm,
+  app: MicrosoftApp,
+  grant: AuthorizationGrant,
+): Effect.Effect<MicrosoftTokens, OAuthError> =>
+  post(
+    postForm,
+    'token',
+    new URLSearchParams([
+      ['grant_type', 'authorization_code'],
+      ['client_id', app.clientId],
+      ['code', grant.code],
+      ['redirect_uri', grant.redirectUri],
+      ['code_verifier', grant.verifier],
+      ['scope', app.scope],
+    ]),
+    TokenResponse,
+  ).pipe(
+    Effect.flatMap(
+      Result.match({
+        onFailure: (failure) =>
+          Effect.fail(
+            new OAuthError({
+              message: `Microsoft sign-in failed: ${failure.description}`,
+            }),
+          ),
+        onSuccess: withRefreshToken,
+      }),
+    ),
+  );
+
+// The link to open, and the sign-in that finishes once Microsoft redirects
+// the browser back. The local server stops when the scope closes.
+const signInInBrowser = (
+  postForm: PostForm,
+  app: MicrosoftApp,
+  loginHint: string,
+) =>
+  startBrowserSignIn(app, loginHint).pipe(
+    Effect.map(({ url, grant }) => ({
+      url,
+      awaitSignIn: grant.pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.minutes(browserSignInMinutes),
+          orElse: () =>
+            Effect.fail(
+              new OAuthError({
+                message: `Sign-in did not finish within ${browserSignInMinutes} minutes. Run pim login again.`,
+              }),
+            ),
+        }),
+        Effect.flatMap((granted) => redeem(postForm, app, granted)),
+      ),
+    })),
+  );
+
 // Microsoft rotates refresh tokens and may omit the new one, in which case the
 // current token stays valid.
 const refresh = (
   postForm: PostForm,
+  app: MicrosoftApp,
   account: string,
   refreshToken: string,
 ): Effect.Effect<MicrosoftTokens, OAuthError> =>
@@ -238,9 +308,9 @@ const refresh = (
     'token',
     new URLSearchParams([
       ['grant_type', 'refresh_token'],
-      ['client_id', clientId],
+      ['client_id', app.clientId],
       ['refresh_token', refreshToken],
-      ['scope', scope],
+      ['scope', app.scope],
     ]),
     TokenResponse,
   ).pipe(
@@ -251,7 +321,7 @@ const refresh = (
             new OAuthError({
               message:
                 failure.error === 'invalid_grant'
-                  ? `Microsoft rejected the stored sign-in for ${account}: ${failure.description} Ask the user to run: ${loginCommand('mail', account)}`
+                  ? `Microsoft rejected the stored sign-in for ${account}: ${failure.description} Ask the user to run: ${loginCommand(app.credential, account)}`
                   : `Microsoft token refresh for ${account} failed: ${failure.description}`,
             }),
           ),
@@ -264,14 +334,21 @@ const refresh = (
     ),
   );
 
-// Sign-in uses the device code flow: the user opens a Microsoft page in any
-// browser and enters a short code, so it also works over SSH.
+// The device code flow lets the user open a Microsoft page in any browser
+// and enter a short code, so it also works over SSH. For personal accounts,
+// Microsoft fails it on pim's own app with an expired-code error after the
+// password, apparently because the page cannot ask to confirm an app from an
+// unverified publisher. That app signs in through a browser on this computer
+// instead.
 export const makeMicrosoftAuth = (postForm: PostForm) =>
   ({
-    requestDeviceCode: requestDeviceCode(postForm),
-    awaitSignIn: (device: DeviceCode) => awaitSignIn(postForm, device),
-    refresh: (account: string, refreshToken: string) =>
-      refresh(postForm, account, refreshToken),
+    requestDeviceCode: (app: MicrosoftApp) => requestDeviceCode(postForm, app),
+    awaitSignIn: (app: MicrosoftApp, device: DeviceCode) =>
+      awaitSignIn(postForm, app, device),
+    signInInBrowser: (app: MicrosoftApp, loginHint: string) =>
+      signInInBrowser(postForm, app, loginHint),
+    refresh: (app: MicrosoftApp, account: string, refreshToken: string) =>
+      refresh(postForm, app, account, refreshToken),
   }) as const;
 
 const postWithFetch: PostForm = (url, form, signal) =>
@@ -280,9 +357,30 @@ const postWithFetch: PostForm = (url, form, signal) =>
 export class MicrosoftAuth extends Context.Service<
   MicrosoftAuth,
   ReturnType<typeof makeMicrosoftAuth>
->()('mail/MicrosoftAuth') {
+>()('shared/MicrosoftAuth') {
   static readonly layer = Layer.succeed(
     MicrosoftAuth,
     MicrosoftAuth.of(makeMicrosoftAuth(postWithFetch)),
   );
 }
+
+// A Microsoft access token lasts about an hour, so each command trades the
+// stored refresh token for a new one. Keeping the rotated refresh token
+// extends the sign-in, which would otherwise expire 90 days after `pim login`.
+export const freshAccessToken = <RefreshError, StoreError>(
+  stored: string,
+  credentials: {
+    readonly refresh: (
+      refreshToken: string,
+    ) => Effect.Effect<MicrosoftTokens, RefreshError>;
+    readonly store: (refreshToken: string) => Effect.Effect<void, StoreError>;
+  },
+): Effect.Effect<string, RefreshError | StoreError> =>
+  credentials.refresh(stored).pipe(
+    Effect.tap((tokens) =>
+      tokens.refreshToken === stored
+        ? Effect.void
+        : credentials.store(tokens.refreshToken),
+    ),
+    Effect.map((tokens) => tokens.accessToken),
+  );
