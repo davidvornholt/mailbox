@@ -181,16 +181,24 @@ const uniqueCandidates = (
   });
 };
 
-const foldersForSearch = (client: ImapFlow, options: SearchOptions) =>
+const foldersForSearch = (
+  client: ImapFlow,
+  options: SearchOptions,
+  skipUnsubscribed: boolean,
+) =>
   options.scope === 'folder'
     ? Effect.succeed([options.folder])
     : Effect.flatMap(listMailboxes(client), (folders) =>
-        selectSearchFolders(folders, options),
+        selectSearchFolders(folders, options, skipUnsubscribed),
       );
 
-export const searchMailboxes = (client: ImapFlow, options: SearchOptions) =>
+export const searchMailboxes = (
+  client: ImapFlow,
+  options: SearchOptions,
+  skipUnsubscribed: boolean,
+) =>
   Effect.gen(function* () {
-    const folders = yield* foldersForSearch(client, options);
+    const folders = yield* foldersForSearch(client, options, skipUnsubscribed);
     const matches = yield* Effect.forEach(folders, (folder) =>
       searchOneFolder(client, folder, options),
     );

@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
 import type { ListResponse } from 'imapflow';
+import type { MailAccount } from '../../../shared/accounts/account';
 import { FolderNotFoundError } from '../errors/errors';
 import type { SearchLocation } from '../schemas/mail';
 
@@ -35,8 +36,17 @@ const isSameOrDescendant = (
   );
 };
 
+// Exchange, which hosts the mailboxes that sign in with Microsoft, lists every
+// mail folder as subscribed unless the user unsubscribed it, and its calendar,
+// contacts, tasks, notes, and journal folders as unsubscribed. It returns the
+// items of those as "Retrieval using the IMAP4 protocol failed" stubs, so a
+// search of every folder skips the unsubscribed ones there.
+export const skipsUnsubscribed = ({ mail }: MailAccount): boolean =>
+  mail.auth === 'microsoft';
+
 const allMailFolders = (
   folders: ReadonlyArray<ListResponse>,
+  skipUnsubscribed: boolean,
 ): ReadonlyArray<string> => {
   const allFolder = folders.find(
     (folder) => folder.specialUse === '\\All' && isSelectable(folder),
@@ -51,6 +61,7 @@ const allMailFolders = (
     .filter(
       (folder) =>
         isSelectable(folder) &&
+        (folder.subscribed === true || !skipUnsubscribed) &&
         !excludedRoots.some((root) => isSameOrDescendant(folder, root)),
     )
     .map((folder) => folder.path);
@@ -81,7 +92,8 @@ const subtreeFolders = (
 export const selectSearchFolders = (
   folders: ReadonlyArray<ListResponse>,
   location: Exclude<SearchLocation, { readonly scope: 'folder' }>,
+  skipUnsubscribed: boolean,
 ): Effect.Effect<ReadonlyArray<string>, FolderNotFoundError> =>
   location.scope === 'all'
-    ? Effect.succeed(allMailFolders(folders))
+    ? Effect.succeed(allMailFolders(folders, skipUnsubscribed))
     : subtreeFolders(folders, location.folder);

@@ -10,6 +10,7 @@ const folder = (
     readonly flags?: ReadonlyArray<string>;
     readonly listed?: boolean;
     readonly specialUse?: string;
+    readonly subscribed?: boolean;
   } = {},
 ): ListResponse => {
   const delimiter = options.delimiter ?? '/';
@@ -26,7 +27,7 @@ const folder = (
     flags: new Set(options.flags ?? []),
     specialUse: options.specialUse,
     listed: options.listed ?? true,
-    subscribed: true,
+    subscribed: options.subscribed ?? true,
   };
 };
 
@@ -38,7 +39,7 @@ describe('selectSearchFolders', () => {
       folder('Archive', { specialUse: '\\Archive' }),
     ];
     await expect(
-      Effect.runPromise(selectSearchFolders(folders, { scope: 'all' })),
+      Effect.runPromise(selectSearchFolders(folders, { scope: 'all' }, false)),
     ).resolves.toEqual(['All Mail']);
   });
 
@@ -57,8 +58,26 @@ describe('selectSearchFolders', () => {
       folder('Unavailable', { flags: ['\\NonExistent'] }),
     ];
     await expect(
-      Effect.runPromise(selectSearchFolders(folders, { scope: 'all' })),
+      Effect.runPromise(selectSearchFolders(folders, { scope: 'all' }, false)),
     ).resolves.toEqual(['INBOX', 'Sent', 'Archive', 'Projects']);
+  });
+
+  it('skips the unsubscribed folders of a Microsoft mailbox', async () => {
+    const folders = [
+      folder('INBOX', { specialUse: '\\Inbox' }),
+      folder('Projects'),
+      folder('Calendar', { subscribed: false }),
+      folder('Calendar/Birthdays', { subscribed: false }),
+      folder('Contacts', { subscribed: false }),
+    ];
+    const search = (skipUnsubscribed: boolean) =>
+      Effect.runPromise(
+        selectSearchFolders(folders, { scope: 'all' }, skipUnsubscribed),
+      );
+    await expect(search(true)).resolves.toEqual(['INBOX', 'Projects']);
+    await expect(search(false)).resolves.toEqual(
+      folders.map(({ path }) => path),
+    );
   });
 
   it('selects the requested folder and all selectable descendants only', async () => {
@@ -72,10 +91,14 @@ describe('selectSearchFolders', () => {
     ];
     await expect(
       Effect.runPromise(
-        selectSearchFolders(folders, {
-          scope: 'subtree',
-          folder: 'Projects',
-        }),
+        selectSearchFolders(
+          folders,
+          {
+            scope: 'subtree',
+            folder: 'Projects',
+          },
+          false,
+        ),
       ),
     ).resolves.toEqual([
       'Projects',
@@ -89,10 +112,14 @@ describe('selectSearchFolders', () => {
     const folders = [folder('INBOX'), folder('INBOX/Filed')];
     await expect(
       Effect.runPromise(
-        selectSearchFolders(folders, {
-          scope: 'subtree',
-          folder: 'inbox',
-        }),
+        selectSearchFolders(
+          folders,
+          {
+            scope: 'subtree',
+            folder: 'inbox',
+          },
+          false,
+        ),
       ),
     ).resolves.toEqual(['INBOX', 'INBOX/Filed']);
   });
@@ -100,10 +127,14 @@ describe('selectSearchFolders', () => {
   it('fails before searching when a subtree root does not exist', async () => {
     const error = await Effect.runPromise(
       Effect.flip(
-        selectSearchFolders([folder('INBOX')], {
-          scope: 'subtree',
-          folder: 'Missing',
-        }),
+        selectSearchFolders(
+          [folder('INBOX')],
+          {
+            scope: 'subtree',
+            folder: 'Missing',
+          },
+          false,
+        ),
       ),
     );
     expect(error._tag).toBe('FolderNotFoundError');
