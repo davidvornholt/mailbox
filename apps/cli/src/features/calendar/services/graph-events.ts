@@ -137,9 +137,11 @@ export const graphInstant = (text: string): number | undefined => {
   return Number.isNaN(millis) ? undefined : millis;
 };
 
-// The day an all-day boundary stands for. Microsoft Graph stores it as
-// midnight in the event's time zone and may convert it to UTC, so pim takes
-// the nearest midnight: the right day for every zone within 12 hours of UTC.
+// The day an all-day boundary stands for. Exchange Online and Outlook.com
+// keep it as midnight UTC, whatever zone the event was written in, and ignore
+// the zone pim asks for. Should Microsoft Graph return it converted from
+// another zone, the nearest midnight is still the right day for every zone
+// within 12 hours of UTC.
 const nearestDate = (millis: number): CalendarDate =>
   addDays(epoch, Math.round(millis / dayMs));
 
