@@ -2,11 +2,7 @@ import {
   davResponse,
   multistatus,
 } from '../../../shared/dav/dav-server.fixture';
-import {
-  calendarRoutes,
-  type Routes,
-  schedules,
-} from './calendar-write.fixture';
+import { calendarRoutes, type Routes, schedules } from './caldav-write.fixture';
 import { icsOf, vevent } from './ical.fixture';
 import { review } from './invitation.fixture';
 

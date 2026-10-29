@@ -11,11 +11,7 @@ import {
 } from '../errors/errors';
 import type { EventDetail } from '../schemas/calendar';
 import { replaceCalendarObject, schedulesFor } from './caldav';
-import {
-  type CalendarWriteError,
-  detailOf,
-  storedDetail,
-} from './calendar-write';
+import type { CalDavWriteError } from './caldav-write';
 import type { CalendarObject } from './event-fields';
 import {
   alreadyAnswers,
@@ -44,8 +40,9 @@ import {
   type InvitationReply,
   invitationReply,
 } from './invitation-reply-email';
-import { refuseOutlookWrite } from './read-only';
+import { outlookInvitation } from './outlook-answer';
 import { userAddresses } from './scheduling';
+import { detailOf, storedDetail } from './stored-event';
 
 export type InvitationAnswer = {
   readonly partstat: Partstat;
@@ -60,7 +57,7 @@ export type AnswerOutcome =
   | { readonly _tag: 'Answered'; readonly event: EventDetail }
   | { readonly _tag: 'Reply'; readonly reply: InvitationReply };
 
-export type InvitationAnswerError = CalendarWriteError | InvitationError;
+export type InvitationAnswerError = CalDavWriteError | InvitationError;
 
 const partiesFor = (
   invitation: ReceivedInvitation,
@@ -178,7 +175,7 @@ const answerPut = (
   client: DavClient,
   { resource }: EventCopy,
   ics: string,
-): Effect.Effect<string | undefined, CalendarWriteError | InvitationError> =>
+): Effect.Effect<string | undefined, CalDavWriteError | InvitationError> =>
   Effect.gen(function* () {
     const { href, etag } = resource;
     if (etag === undefined) {
@@ -217,7 +214,7 @@ const answerOnServer = (
     readonly answer: CopyAnswer;
   },
   local: DateTime.TimeZone,
-): Effect.Effect<EventDetail, CalendarWriteError | InvitationError> =>
+): Effect.Effect<EventDetail, CalDavWriteError | InvitationError> =>
   Effect.gen(function* () {
     const change = yield* plannedChange(invitation, answer.addresses, place);
     const planned = yield* plannedCopy(place, change);
@@ -269,7 +266,7 @@ export const answerInvitation = (
 ): Effect.Effect<AnswerOutcome, InvitationAnswerError, Dav> =>
   Effect.gen(function* () {
     const { partstat } = answer;
-    yield* refuseOutlookWrite(account);
+    yield* outlookInvitation(account);
     if (account.dav === undefined) {
       const parties = yield* partiesFor(invitation, [account.email]);
       return yield* replyOutcome(account, invitation, parties, partstat);

@@ -7,6 +7,7 @@ import {
 import { describeInvitation } from '../features/calendar/services/invitation-copies';
 import { importInvitation } from '../features/calendar/services/invitation-import';
 import { answerInvitation } from '../features/calendar/services/invitation-reply';
+import { answerOutlookMeeting } from '../features/calendar/services/outlook-answer';
 import { Imap } from '../features/mail/services/imap';
 import { AccountConfig } from '../shared/accounts/config';
 import { defineCommand, flag, UsageError } from '../shared/command-line';
@@ -71,7 +72,7 @@ const importMessage = defineCommand(
     name: 'calendar import',
     summary: 'Put an invitation, update, or cancellation into the calendar',
     description:
-      'Apply an invitation (method request), an update of one, or a cancellation (method cancel) that the organizer emailed to the user\'s calendar, without answering it. pim writes so that the calendar server emails no one. A new meeting goes in with the user\'s answer open. For a meeting the calendar holds, pim keeps the user\'s answer and reminders, and opens the answer again when the organizer changed the meeting itself (a higher sequence). An invitation or cancellation for single occurrences changes only those. Prints {"import", "event"}: "created" or "updated", "current" when the calendar already holds this message or a newer one, and "absent" when it does not hold the meeting a cancellation is for. Needs a dav table: pim only reads Outlook calendars.',
+      'Apply an invitation (method request), an update of one, or a cancellation (method cancel) that the organizer emailed to the user\'s calendar, without answering it. pim writes so that the calendar server emails no one. A new meeting goes in with the user\'s answer open. For a meeting the calendar holds, pim keeps the user\'s answer and reminders, and opens the answer again when the organizer changed the meeting itself (a higher sequence). An invitation or cancellation for single occurrences changes only those. Prints {"import", "event"}: "created" or "updated", "current" when the calendar already holds this message or a newer one, and "absent" when it does not hold the meeting a cancellation is for. Needs a dav table: Outlook puts invitations into its calendar itself, where "pim calendar respond --href" answers them.',
     flags: { ...messageFlags, calendar: calendarFlag },
   },
   (values): CommandEffect =>
@@ -93,15 +94,63 @@ const importMessage = defineCommand(
 const isPartstat = (value: string): value is Partstat =>
   (partstats as ReadonlyArray<string>).includes(value);
 
+const respondUsage = (message: string) =>
+  new UsageError({ message: `pim calendar respond: ${message}` });
+
+// The meeting to answer: an Outlook event, or an invitation email.
+const answeredMeeting = (values: {
+  readonly href: string | undefined;
+  readonly folder: string | undefined;
+  readonly uid: number | undefined;
+  readonly calendar: string | undefined;
+  readonly series: boolean;
+}) => {
+  const { href, folder, uid } = values;
+  if (href !== undefined) {
+    return folder === undefined &&
+      uid === undefined &&
+      values.calendar === undefined
+      ? Effect.succeed({ _tag: 'Outlook' as const, href })
+      : Effect.fail(
+          respondUsage(
+            '--href answers an Outlook meeting and takes no --folder, --uid, or --calendar',
+          ),
+        );
+  }
+  if (values.series) {
+    return Effect.fail(
+      respondUsage(
+        '--series answers a recurring Outlook meeting and needs --href; an invitation email says itself which occurrences it is for',
+      ),
+    );
+  }
+  return folder === undefined || uid === undefined
+    ? Effect.fail(
+        respondUsage(
+          'pass --folder and --uid of an invitation email, or --href of an Outlook meeting',
+        ),
+      )
+    : Effect.succeed({ _tag: 'Message' as const, folder, uid });
+};
+
 const respond = defineCommand(
   {
     name: 'calendar respond',
-    summary: 'Answer an invitation email',
+    summary: 'Answer an invitation',
     description:
-      'Answer an invitation (method request) as the attendee. For an account with a dav table whose server sends answers itself (RFC 6638), pim first brings the meeting in the calendar up to date with the invitation as "pim calendar import" does, and then gives the answer there, which makes the server email the organizer; pim does this only with --notify-organizer. An invitation for single occurrences answers only those. It prints {"reply": "server", "event"}, where event.organizer.scheduleStatus tells, when the server reports it, how it delivered the answer (1.x: sent or pending). pim refuses for an account with only a graph table, as it only reads Outlook calendars. For any other account, pim saves the answer as a reply draft to the organizer, with the calendar data their calendar reads, and prints {"reply": "draft", "draft", "to", "subject"}. The user sends the draft from their mail app; pim writes no calendar then.',
+      'Answer a meeting someone else organizes, as the attendee. Outlook puts invitations into its calendar itself: --href answers such a meeting from "pim calendar events", which names one occurrence of a recurring meeting, or with --series its seriesHref from "pim calendar get"; pim keeps the answer in the calendar and makes Microsoft email the organizer only with --notify-organizer. It prints {"reply": "server" or "none", "event"}, without event when Microsoft removed the declined meeting from the calendar. --folder and --uid answer an invitation email (method request). For an account with a dav table whose server sends answers itself (RFC 6638), pim first brings the meeting in the calendar up to date with the invitation as "pim calendar import" does, and then gives the answer there, which makes the server email the organizer; pim does this only with --notify-organizer. An invitation for single occurrences answers only those. It prints {"reply": "server", "event"}, where event.organizer.scheduleStatus tells, when the server reports it, how it delivered the answer (1.x: sent or pending). For an account with only a graph table, pim points to --href. For any other account, pim saves the answer as a reply draft to the organizer, with the calendar data their calendar reads, and prints {"reply": "draft", "draft", "to", "subject"}. The user sends the draft from their mail app; pim writes no calendar then.',
     flags: {
-      ...messageFlags,
+      account: messageFlags.account,
+      href: flag.optionalText(
+        'href',
+        'Outlook meeting from "pim calendar events"',
+      ),
+      folder: flag.optionalText('path', 'Folder of the invitation email'),
+      uid: flag.optionalInteger('n', 'Uid of the invitation email'),
       partstat: flag.text(partstats.join('|'), 'The answer'),
+      series: flag.switch(
+        'Allow the answer for every occurrence of a recurring Outlook meeting',
+      ),
       calendar: calendarFlag,
       notifyOrganizer: flag.switch(
         'Allow the answer that makes the calendar server email the organizer. Pass it only when the user asked to answer',
@@ -116,8 +165,28 @@ const respond = defineCommand(
           message: `pim calendar respond: --partstat must be ${partstats.join(', ')}, not "${partstat}"`,
         });
       }
-      const { account, message, invitation } =
-        yield* receivedInvitation(values);
+      const meeting = yield* answeredMeeting(values);
+      if (meeting._tag === 'Outlook') {
+        const config = yield* AccountConfig;
+        const answered = yield* answerOutlookMeeting(
+          yield* config.getAccount(values.account),
+          {
+            href: meeting.href,
+            partstat,
+            series: values.series,
+            notifyOrganizer: values.notifyOrganizer,
+          },
+          DateTime.zoneMakeLocal(),
+        );
+        return json({
+          reply: answered.notified ? 'server' : 'none',
+          ...(answered.event === undefined ? {} : { event: answered.event }),
+        });
+      }
+      const { account, message, invitation } = yield* receivedInvitation({
+        account: values.account,
+        ...meeting,
+      });
       const outcome = yield* answerInvitation(
         account,
         invitation,

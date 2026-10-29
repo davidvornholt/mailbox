@@ -9,7 +9,27 @@ const notFoundCode = 404;
 export type GraphRequest = {
   readonly url: string;
   readonly prefer: string | undefined;
+  // Only on writes.
+  readonly method?: string;
+  readonly body?: unknown;
+  readonly ifMatch?: string;
 };
+
+// An answer with another status than 200, and without a body when it has
+// none.
+export class GraphReply {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(status: number, body?: unknown) {
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// The JSON body of an answer, a reply, or replies in turn, the last of
+// which repeats. Microsoft Graph answers no request with a JSON array.
+export type GraphRoute = unknown;
 
 // An account that reads Outlook calendars from the fake Microsoft Graph.
 export const graphAccount: Account = {
@@ -44,38 +64,75 @@ const selectFields = (
   );
 };
 
+const writeOf = (init: Parameters<GraphFetch>[1]): Partial<GraphRequest> => ({
+  method: init.method,
+  ...(init.body === undefined ? {} : { body: JSON.parse(init.body) }),
+  ...(init.headers['if-match'] === undefined
+    ? {}
+    : { ifMatch: init.headers['if-match'] }),
+});
+
+const responseOf = (
+  answer: unknown,
+  select: string | null,
+  expand: string | null,
+): Response => {
+  if (answer === undefined) {
+    return Response.json(
+      { error: { code: 'ErrorItemNotFound', message: 'Not found.' } },
+      { status: notFoundCode },
+    );
+  }
+  if (answer instanceof GraphReply) {
+    return answer.body === undefined
+      ? new Response(null, { status: answer.status })
+      : Response.json(answer.body, { status: answer.status });
+  }
+  return Response.json(
+    select === null
+      ? answer
+      : selectFields(
+          answer,
+          new Set(select.split(',')),
+          new Set(expand?.split(',')),
+        ),
+  );
+};
+
 // A Microsoft Graph that answers each path, without /v1.0, from a table, and
-// records every request. A path with $skiptoken=<token> answers from
-// "<path>?$skiptoken=<token>", and anything else gets 404. An answer keeps
-// only the fields in $select.
-export const fakeGraph = (routes: Readonly<Record<string, unknown>>) => {
-  const answers = new Map(Object.entries(routes));
+// records every request. A read answers from its path, and a path with
+// $skiptoken=<token> from "<path>?$skiptoken=<token>"; a write answers from
+// "<METHOD> <path>". Anything else gets 404. An answer keeps only the fields
+// in $select.
+export const fakeGraph = (routes: Readonly<Record<string, GraphRoute>>) => {
   const requests: Array<GraphRequest> = [];
+  const answered = new Map<string, number>();
+  const answerFor = (key: string): unknown => {
+    const route = routes[key];
+    if (!Array.isArray(route)) {
+      return route;
+    }
+    const count = answered.get(key) ?? 0;
+    answered.set(key, count + 1);
+    return route[Math.min(count, route.length - 1)];
+  };
   const fetch: GraphFetch = (url, init) => {
-    requests.push({ url, prefer: init.headers.prefer });
+    const reads = init.method === 'GET';
+    requests.push({
+      url,
+      prefer: init.headers.prefer,
+      ...(reads ? {} : writeOf(init)),
+    });
     const { pathname, searchParams } = new URL(url);
     const path = pathname.replace('/v1.0', '');
     const token = searchParams.get('$skiptoken');
-    const select = searchParams.get('$select');
-    const expand = searchParams.get('$expand');
-    const body = answers.get(
-      token === null ? path : `${path}?$skiptoken=${token}`,
-    );
+    const key = reads ? path : `${init.method} ${path}`;
     return Promise.resolve(
-      body === undefined
-        ? Response.json(
-            { error: { code: 'ErrorItemNotFound', message: 'Not found.' } },
-            { status: notFoundCode },
-          )
-        : Response.json(
-            select === null
-              ? body
-              : selectFields(
-                  body,
-                  new Set(select.split(',')),
-                  new Set(expand?.split(',')),
-                ),
-          ),
+      responseOf(
+        answerFor(token === null ? key : `${key}?$skiptoken=${token}`),
+        searchParams.get('$select'),
+        searchParams.get('$expand'),
+      ),
     );
   };
   const client = makeGraphClient(
@@ -94,7 +151,7 @@ export const fakeGraph = (routes: Readonly<Record<string, unknown>>) => {
 
 // Runs the effect against a fake Microsoft Graph.
 export const onFakeGraph = <A, E, R>(
-  routes: Readonly<Record<string, unknown>>,
+  routes: Readonly<Record<string, GraphRoute>>,
   effect: Effect.Effect<A, E, R>,
 ) => {
   const { requests, graph } = fakeGraph(routes);

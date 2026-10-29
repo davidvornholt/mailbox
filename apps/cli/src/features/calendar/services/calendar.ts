@@ -94,7 +94,7 @@ const notFound = (
         : `${account} has no calendar "${wanted}". Its calendars: ${describeCollections(calendars)}`,
   });
 
-const foundOrFail = <A>(
+export const foundOrFail = <A>(
   account: string,
   calendars: ReadonlyArray<Calendar>,
   wanted: string,

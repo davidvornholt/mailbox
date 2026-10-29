@@ -3,6 +3,7 @@ import { loginCommand } from '../accounts/secrets';
 import {
   GraphAccessError,
   GraphAuthError,
+  GraphConflictError,
   GraphError,
   GraphNotFoundError,
   type GraphRequestError,
@@ -16,18 +17,33 @@ const maxPages = 100;
 const unauthorized = 401;
 const forbidden = 403;
 const notFound = 404;
+const preconditionFailed = 412;
 const tooManyRequests = 429;
 const wholeSeconds = /^\d+$/u;
 
-// Sends a GET request. Injected so tests run without the network. pim only
-// reads from Microsoft Graph, so a client sends no other method.
+// Sends a request. Injected so tests run without the network.
 export type GraphFetch = (
   url: string,
   init: {
+    readonly method: GraphMethod;
     readonly headers: Readonly<Record<string, string>>;
+    readonly body?: string;
     readonly signal: AbortSignal;
   },
 ) => Promise<Response>;
+
+export type GraphMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
+// A request that changes something, such as an event.
+export type GraphWrite = {
+  readonly method: Exclude<GraphMethod, 'GET'>;
+  readonly path: string;
+  // Sent as JSON.
+  readonly body?: unknown;
+  // The etag the resource must still have. Microsoft Graph honors it on a
+  // PATCH of an event but ignores it on a DELETE.
+  readonly ifMatch?: string;
+};
 
 // Preferences such as outlook.timezone="UTC" for the Prefer header.
 export type GraphOptions = { readonly prefer?: ReadonlyArray<string> };
@@ -45,6 +61,13 @@ export type GraphClient = {
     path: string,
     options?: GraphOptions,
   ) => Effect.Effect<ReadonlyArray<unknown>, GraphRequestError>;
+  // Sends the write once, and decodes the answer with schema. An answer
+  // without a body decodes as undefined.
+  readonly send: <A>(
+    write: GraphWrite,
+    schema: Schema.Decoder<A>,
+    options?: GraphOptions,
+  ) => Effect.Effect<A, GraphRequestError>;
 };
 
 const ErrorBody = Schema.Struct({
@@ -114,6 +137,11 @@ export const graphFailure = (
         path,
         message: `Microsoft Graph found nothing at ${path} for ${account} (HTTP 404${detail})`,
       });
+    case preconditionFailed:
+      return new GraphConflictError({
+        href: path,
+        message: `${path} changed since you read it, so Microsoft Graph made no change (HTTP 412${detail}). Run "pim calendar get" again and check that the change still applies`,
+      });
     case tooManyRequests: {
       const seconds = retryAfterSeconds(retryAfter);
       return new GraphThrottledError({
@@ -138,6 +166,18 @@ const preferHeader = (
     ? {}
     : { prefer: options.prefer.join(', ') };
 
+const requestHeaders = (
+  accessToken: string,
+  options: GraphOptions | undefined,
+  write: GraphWrite | undefined,
+): Readonly<Record<string, string>> => ({
+  authorization: `Bearer ${accessToken}`,
+  accept: 'application/json',
+  ...preferHeader(options),
+  ...(write?.body === undefined ? {} : { 'content-type': 'application/json' }),
+  ...(write?.ifMatch === undefined ? {} : { 'if-match': write.ifMatch }),
+});
+
 export const makeGraphClient = (
   {
     account,
@@ -148,15 +188,16 @@ export const makeGraphClient = (
   const request = (
     url: string,
     options: GraphOptions | undefined,
+    write?: GraphWrite,
   ): Effect.Effect<unknown, GraphRequestError> =>
     Effect.tryPromise({
       try: async (signal): Promise<Answer> => {
         const response = await fetch(url, {
-          headers: {
-            authorization: `Bearer ${accessToken}`,
-            accept: 'application/json',
-            ...preferHeader(options),
-          },
+          method: write?.method ?? 'GET',
+          headers: requestHeaders(accessToken, options, write),
+          ...(write?.body === undefined
+            ? {}
+            : { body: JSON.stringify(write.body) }),
           signal,
         });
         const body: unknown = await response.json().catch(() => undefined);
@@ -177,7 +218,7 @@ export const makeGraphClient = (
         orElse: () =>
           Effect.fail(
             new GraphError({
-              message: `Microsoft Graph did not answer within ${requestTimeoutSeconds} seconds for ${account}`,
+              message: `Microsoft Graph did not answer within ${requestTimeoutSeconds} seconds for ${account}${write === undefined ? '' : '. It may have made the change anyway: read the event again before you retry'}`,
             }),
           ),
       }),
@@ -235,9 +276,21 @@ export const makeGraphClient = (
       }),
     );
 
+  const send = <A>(
+    write: GraphWrite,
+    schema: Schema.Decoder<A>,
+    options?: GraphOptions,
+  ): Effect.Effect<A, GraphRequestError> => {
+    const url = `${graphRoot}${write.path}`;
+    return request(url, options, write).pipe(
+      Effect.flatMap((body) => decode(url, schema, body)),
+    );
+  };
+
   return {
     account,
     get,
     list: (path, options) => pages(`${graphRoot}${path}`, options, [], 1),
+    send,
   };
 };

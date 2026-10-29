@@ -6,7 +6,7 @@ import {
   multistatus,
   writeRequests,
 } from '../../../shared/dav/dav-server.fixture';
-import type { Routes } from './calendar-write.fixture';
+import type { Routes } from './caldav-write.fixture';
 import { berlin, vevent } from './ical.fixture';
 import type { ReceivedInvitation } from './invitation';
 import { invitationIcs, received, review } from './invitation.fixture';

@@ -19,6 +19,8 @@ export const GraphCalendar = Schema.Struct({
   name: nullable(Schema.String),
   hexColor: nullable(Schema.String),
   canEdit: nullable(Schema.Boolean),
+  // Such as teamsForBusiness, or unknown when the calendar allows none.
+  allowedOnlineMeetingProviders: nullable(Schema.Array(Schema.String)),
 });
 
 export type GraphCalendar = typeof GraphCalendar.Type;
@@ -33,14 +35,19 @@ const DateTimeTimeZone = Schema.Struct({
   timeZone: nullable(Schema.String),
 });
 
-const GraphAttendee = Schema.Struct({
+const ResponseStatus = Schema.Struct({ response: nullable(Schema.String) });
+
+export const GraphAttendee = Schema.Struct({
   type: nullable(Schema.String),
-  status: nullable(Schema.Struct({ response: nullable(Schema.String) })),
+  status: nullable(ResponseStatus),
   emailAddress: nullable(EmailAddress),
 });
 
+export type GraphAttendee = typeof GraphAttendee.Type;
+
 export const GraphEvent = Schema.Struct({
   id: Schema.String,
+  '@odata.etag': nullable(Schema.String),
   iCalUId: nullable(Schema.String),
   subject: nullable(Schema.String),
   start: DateTimeTimeZone,
@@ -61,6 +68,12 @@ export const GraphEvent = Schema.Struct({
   ),
   webLink: nullable(Schema.String),
   seriesMasterId: nullable(Schema.String),
+  isOrganizer: nullable(Schema.Boolean),
+  // The user's own answer, on a meeting someone else organizes.
+  responseStatus: nullable(ResponseStatus),
+  isOnlineMeeting: nullable(Schema.Boolean),
+  onlineMeetingProvider: nullable(Schema.String),
+  onlineMeeting: nullable(Schema.Struct({ joinUrl: nullable(Schema.String) })),
 });
 
 export type GraphEvent = typeof GraphEvent.Type;
@@ -229,7 +242,7 @@ const roles = new Map([
 ]);
 
 // Microsoft Graph's response of an attendee, as an iCalendar PARTSTAT.
-const partstats = new Map([
+export const graphPartstats = new Map([
   ['accepted', 'accepted'],
   ['tentativelyAccepted', 'tentative'],
   ['declined', 'declined'],
@@ -260,7 +273,7 @@ export const graphAttendees = (
         ),
         ...optional(
           'partstat',
-          organizes ? 'accepted' : partstats.get(response),
+          organizes ? 'accepted' : graphPartstats.get(response),
         ),
       },
     ];

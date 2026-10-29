@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { unfolded } from './calendar-write.fixture';
+import { unfolded } from './caldav-write.fixture';
 import { vevent } from './ical.fixture';
 import { invitationIcs, received, review } from './invitation.fixture';
 import { invitationReply } from './invitation-reply-email';

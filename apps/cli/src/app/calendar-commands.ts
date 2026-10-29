@@ -46,7 +46,7 @@ const list = defineCommand(
     name: 'calendar list',
     summary: 'List calendars',
     description:
-      'List the calendars of every account with a dav or graph table, or of one account. Outlook calendars from a graph table include those shared with the user, and pim only reads them. Accounts that fail are listed under "failures".',
+      'List the calendars of every account with a dav or graph table, or of one account. Outlook calendars from a graph table include those shared with the user. "writable" tells whether the user may add and change events. Accounts that fail are listed under "failures".',
     flags: {
       account: flag.optionalText('email', 'List only this account'),
     },
@@ -146,7 +146,7 @@ const get = defineCommand(
     name: 'calendar get',
     summary: 'Show one event',
     description:
-      'Show an event with its description, organizer, attendees, and, for a recurring event, its rule and the occurrences that differ from it. The etag identifies this version of a CalDAV event. An Outlook event is the occurrence its href names, with the rule of its series.',
+      'Show an event with its description, organizer, attendees, and, for a recurring event, its rule and the occurrences that differ from it. The etag identifies this version of the event. An Outlook event is the occurrence its href names, with the rule of its series and the series as seriesHref, and onlineMeeting holds the join link of a Teams meeting.',
     flags: {
       account: flag.text('email', 'Account from "pim calendar events"'),
       href: flag.text('href', 'Event href from "pim calendar events"'),

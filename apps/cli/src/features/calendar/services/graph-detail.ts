@@ -9,6 +9,7 @@ import {
   GraphEvent,
   type GraphSpan,
   graphAttendees,
+  graphPartstats,
   graphRecurrenceId,
   graphSpan,
   graphStatus,
@@ -310,6 +311,33 @@ const organizerOf = (event: GraphEvent): EventDetail['organizer'] => {
       };
 };
 
+const onlineMeetingOf = (event: GraphEvent): EventDetail['onlineMeeting'] =>
+  event.isOnlineMeeting === true
+    ? {
+        provider: nonEmpty(event.onlineMeetingProvider) ?? 'unknown',
+        ...optional('joinUrl', nonEmpty(event.onlineMeeting?.joinUrl)),
+      }
+    : undefined;
+
+// On a meeting someone else organizes, Microsoft Graph keeps the user's own
+// answer apart from the attendees, whose answers it may not know.
+const withOwnAnswer = (
+  event: GraphEvent,
+  account: string,
+  listed: ReadonlyArray<Attendee>,
+): ReadonlyArray<Attendee> => {
+  const own = graphPartstats.get(event.responseStatus?.response ?? '');
+  if (event.isOrganizer !== false || own === undefined) {
+    return listed;
+  }
+  const email = account.toLowerCase();
+  return listed.map((attendee) =>
+    attendee.email.toLowerCase() === email
+      ? { ...attendee, partstat: own }
+      : attendee,
+  );
+};
+
 export const graphEventDetail = (
   event: GraphEvent,
   span: GraphSpan,
@@ -320,6 +348,11 @@ export const graphEventDetail = (
 ): EventDetail => ({
   account: context.account,
   href: event.id,
+  ...optional('etag', nonEmpty(event['@odata.etag'])),
+  ...optional(
+    'seriesHref',
+    event.type === 'seriesMaster' ? undefined : nonEmpty(event.seriesMasterId),
+  ),
   uid: nonEmpty(event.iCalUId) ?? event.id,
   summary: nonEmpty(event.subject) ?? '',
   start: span.start,
@@ -328,8 +361,9 @@ export const graphEventDetail = (
   ...optional('location', nonEmpty(event.location?.displayName)),
   ...optional('description', description(event.body)),
   ...optional('url', nonEmpty(event.webLink)),
+  ...optional('onlineMeeting', onlineMeetingOf(event)),
   ...optional('status', graphStatus(event)),
   ...optional('organizer', organizerOf(event)),
-  attendees: graphAttendees(event),
+  attendees: withOwnAnswer(event, context.account, graphAttendees(event)),
   ...optional('recurrence', context.recurrence),
 });

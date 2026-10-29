@@ -68,7 +68,7 @@ describe('graphCalendars', () => {
       ]),
     );
     expect(requests.map(({ url }) => url)).toEqual([
-      `${root}/me/calendars?$select=id,name,hexColor,canEdit`,
+      `${root}/me/calendars?$select=id,name,hexColor,canEdit,allowedOnlineMeetingProviders`,
     ]);
   });
 
@@ -272,7 +272,7 @@ describe('graphEvent', () => {
     });
     expect(requests).toEqual([
       {
-        url: `${root}/me/events/occ-1?$select=id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId`,
+        url: `${root}/me/events/occ-1?$select=id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId,isOrganizer,responseStatus,isOnlineMeeting,onlineMeetingProvider,onlineMeeting`,
         prefer: 'outlook.timezone="UTC", outlook.body-content-type="text"',
       },
       {
