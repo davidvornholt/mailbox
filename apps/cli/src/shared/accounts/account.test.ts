@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import { Result } from 'effect';
-import { decodeAccounts, findAccount } from './account';
+import { Effect, Result } from 'effect';
+import { decodeAccounts, findAccount, mailAccount } from './account';
 
-const minimalAccount = {
-  email: 'a@b.com',
-  name: 'A',
-  host: 'imap.b.com',
-};
+const mailOnly = { name: 'A', mail: { host: 'imap.b.com' } };
 
 const decoded = (input: unknown) =>
   Result.getOrThrowWith(decodeAccounts(input), (error) => new Error(error));
@@ -17,15 +13,88 @@ const rejection = (input: unknown): string =>
     onSuccess: () => 'accepted',
   });
 
+// Each case: the accounts table, and what the rejection must say.
+const rejections: ReadonlyArray<
+  readonly [string, Record<string, unknown>, string]
+> = [
+  ['no accounts', {}, 'needs at least one account'],
+  [
+    'a key that is no email address',
+    { work: mailOnly },
+    'account keys must be email addresses',
+  ],
+  [
+    'account emails that differ only by case',
+    { 'a@b.com': mailOnly, 'A@B.com': mailOnly },
+    'unique ignoring case: A@B.com',
+  ],
+  [
+    'an account without a service',
+    { 'a@b.com': { name: 'A' } },
+    'an account needs a mail, dav, or graph table',
+  ],
+  ['a missing name', { 'a@b.com': { mail: { host: 'x' } } }, 'name'],
+  ['a missing host', { 'a@b.com': { name: 'A', mail: {} } }, 'host'],
+  [
+    'a mail key at the account level',
+    { 'a@b.com': { ...mailOnly, host: 'imap.b.com' } },
+    'host',
+  ],
+  [
+    'a misspelled mail key',
+    { 'a@b.com': { name: 'A', mail: { host: 'x', hots: 'x' } } },
+    'hots',
+  ],
+  [
+    'an out-of-range port',
+    { 'a@b.com': { name: 'A', mail: { host: 'x', port: 70_000 } } },
+    'port',
+  ],
+  [
+    'an unknown auth method',
+    { 'a@b.com': { name: 'A', mail: { host: 'x', auth: 'oauth' } } },
+    'auth',
+  ],
+  [
+    'a plain-http DAV url',
+    { 'a@b.com': { name: 'A', dav: { url: 'http://dav.b.com/' } } },
+    'must be an https URL',
+  ],
+  [
+    'a misspelled DAV key',
+    {
+      'a@b.com': {
+        name: 'A',
+        dav: { url: 'https://dav.b.com/', usr: 'x' },
+      },
+    },
+    'usr',
+  ],
+  [
+    'an unknown Graph key',
+    { 'a@b.com': { name: 'A', graph: { tenant: 'x' } } },
+    'tenant',
+  ],
+  [
+    'an empty Graph client-id',
+    { 'a@b.com': { name: 'A', graph: { 'client-id': '' } } },
+    'client-id',
+  ],
+];
+
 describe('decodeAccounts', () => {
-  it('applies implicit TLS and password defaults and uses the email as the login user', () => {
-    expect(decoded({ accounts: [minimalAccount] })).toEqual([
+  it('takes each email from its key and fills in the mail defaults', () => {
+    expect(decoded({ accounts: { 'a@b.com': mailOnly } })).toEqual([
       {
-        ...minimalAccount,
-        port: 993,
-        secure: true,
-        user: 'a@b.com',
-        auth: 'password',
+        email: 'a@b.com',
+        name: 'A',
+        mail: {
+          host: 'imap.b.com',
+          port: 993,
+          secure: true,
+          user: 'a@b.com',
+          auth: 'password',
+        },
       },
     ]);
   });
@@ -38,92 +107,82 @@ describe('decodeAccounts', () => {
       auth: 'microsoft',
     } as const;
     const [account] = decoded({
-      accounts: [{ ...minimalAccount, ...explicit }],
+      accounts: {
+        'a@b.com': { name: 'A', mail: { host: 'imap.b.com', ...explicit } },
+      },
     });
-    expect(account).toMatchObject(explicit);
+    expect(account?.mail).toMatchObject(explicit);
   });
 
-  it('adds DAV settings that log in as the account user by default', () => {
-    const [account] = decoded({
-      accounts: [
-        {
-          ...minimalAccount,
-          user: 'login',
+  it('adds DAV settings that log in as the mail user, or the email without mail', () => {
+    const [withMail, davOnly] = decoded({
+      accounts: {
+        'a@b.com': {
+          name: 'A',
+          mail: { host: 'imap.b.com', user: 'login' },
           dav: { url: 'https://dav.b.com/' },
         },
-      ],
+        'c@b.com': { name: 'C', dav: { url: 'https://dav.b.com/' } },
+      },
     });
-    expect(account?.dav).toEqual({ url: 'https://dav.b.com/', user: 'login' });
-    const [plain] = decoded({ accounts: [minimalAccount] });
-    expect(plain).not.toHaveProperty('dav');
+    expect(withMail?.dav).toEqual({ url: 'https://dav.b.com/', user: 'login' });
+    expect(davOnly).toEqual({
+      email: 'c@b.com',
+      name: 'C',
+      dav: { url: 'https://dav.b.com/', user: 'c@b.com' },
+    });
   });
 
   it("adds Graph settings that use pim's app unless client-id replaces it", () => {
     const [account, own] = decoded({
-      accounts: [
-        { ...minimalAccount, graph: {} },
-        {
-          ...minimalAccount,
-          email: 'c@example.com',
+      accounts: {
+        'a@b.com': { name: 'A', graph: {} },
+        'c@example.com': {
+          name: 'C',
           graph: { 'client-id': '00000000-0000-4000-8000-000000000002' },
         },
-      ],
+      },
     });
-    expect(account?.graph).toEqual({
-      clientId: '161e31aa-5a5e-4f0f-a4c5-9660cf121f18',
+    expect(account).toEqual({
+      email: 'a@b.com',
+      name: 'A',
+      graph: { clientId: '161e31aa-5a5e-4f0f-a4c5-9660cf121f18' },
     });
     expect(own?.graph).toEqual({
       clientId: '00000000-0000-4000-8000-000000000002',
     });
-    const [plain] = decoded({ accounts: [minimalAccount] });
+    const [plain] = decoded({ accounts: { 'a@b.com': mailOnly } });
     expect(plain).not.toHaveProperty('graph');
+    expect(plain).not.toHaveProperty('dav');
   });
 
-  it('rejects an empty accounts list', () => {
-    expect(rejection({ accounts: [] })).not.toBe('accepted');
+  it.each(rejections)('rejects %s and says why', (_case, accounts, reason) => {
+    expect(rejection({ accounts })).toContain(reason);
   });
+});
 
-  it('rejects account emails that differ only by case', () => {
-    expect(
-      rejection({
-        accounts: [minimalAccount, { ...minimalAccount, email: 'A@B.com' }],
-      }),
-    ).toContain('account emails must be unique');
-  });
-
-  it.each([
-    ['a missing host', { email: 'a@b.com', name: 'A' }, 'host'],
-    ['a misspelled key', { ...minimalAccount, hots: 'x' }, 'hots'],
-    ['an out-of-range port', { ...minimalAccount, port: 70_000 }, 'port'],
-    ['an unknown auth method', { ...minimalAccount, auth: 'oauth' }, 'auth'],
-    [
-      'a plain-http DAV url',
-      { ...minimalAccount, dav: { url: 'http://dav.b.com/' } },
-      'must be an https URL',
-    ],
-    [
-      'a misspelled DAV key',
-      { ...minimalAccount, dav: { url: 'https://dav.b.com/', usr: 'x' } },
-      'usr',
-    ],
-    [
-      'an unknown Graph key',
-      { ...minimalAccount, graph: { tenant: 'x' } },
-      'tenant',
-    ],
-    [
-      'an empty Graph client-id',
-      { ...minimalAccount, graph: { 'client-id': '' } },
-      'client-id',
-    ],
-  ])('rejects %s and names the field', (_case, account, field) => {
-    expect(rejection({ accounts: [account] })).toContain(field);
+describe('mailAccount', () => {
+  it('fails with a typed error for an account without mail', async () => {
+    const [account] = decoded({
+      accounts: { 'a@b.com': { name: 'A', graph: {} } },
+    });
+    if (account === undefined) {
+      throw new Error('expected an account');
+    }
+    const result = await Effect.runPromise(Effect.result(mailAccount(account)));
+    expect(result).toMatchObject({
+      _tag: 'Failure',
+      failure: {
+        _tag: 'MailNotConfiguredError',
+        message: 'a@b.com has no mail: its account config has no mail table',
+      },
+    });
   });
 });
 
 describe('findAccount', () => {
   it('matches case-insensitively and ignores surrounding whitespace', () => {
-    const accounts = decoded({ accounts: [minimalAccount] });
+    const accounts = decoded({ accounts: { 'a@b.com': mailOnly } });
     expect(findAccount(accounts, ' A@B.COM ')?.email).toBe('a@b.com');
     expect(findAccount(accounts, 'other@b.com')).toBeUndefined();
   });

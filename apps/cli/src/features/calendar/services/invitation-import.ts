@@ -327,7 +327,7 @@ export const importInvitation = (
     yield* refuseOutlookWrite(account);
     if (account.dav === undefined) {
       return yield* new InvitationError({
-        message: `${account.email} has no calendar server ([accounts.dav] in accounts.toml), so pim cannot add the meeting to a calendar`,
+        message: `${account.email} has no calendar server (a dav table in the account config), so pim cannot add the meeting to a calendar`,
       });
     }
     const dav = yield* Dav;

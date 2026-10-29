@@ -13,11 +13,6 @@ import { checkGraphAccounts, graphStatusFromError } from './status';
 const account: Account = {
   email: 'me@example.com',
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'me@example.com',
-  auth: 'password',
   graph: { clientId: pimClientId },
 };
 
@@ -117,7 +112,7 @@ describe('Graph', () => {
     ]);
   });
 
-  it('needs an [accounts.graph] table', async () => {
+  it('needs a graph table', async () => {
     const { graph: _graph, ...withoutGraph } = account;
     const graph = graphWith({ stored: 'stored', rotated: 'stored' });
 
@@ -131,7 +126,7 @@ describe('Graph', () => {
 });
 
 describe('checkGraphAccounts', () => {
-  it('reports each account with [accounts.graph]', async () => {
+  it('reports each account with a graph table', async () => {
     const graph = graphWith({ stored: 'stored', rotated: 'stored' });
     const { graph: _graph, ...mailOnly } = {
       ...account,

@@ -17,7 +17,7 @@ const books = defineCommand(
     name: 'contacts books',
     summary: 'List address books',
     description:
-      'List the address books of every account with [accounts.dav], or of one account. Accounts that fail are listed under "failures".',
+      'List the address books of every account with a dav table, or of one account. Accounts that fail are listed under "failures".',
     flags: {
       account: flag.optionalText('email', 'List only this account'),
     },

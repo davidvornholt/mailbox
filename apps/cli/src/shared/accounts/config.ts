@@ -22,7 +22,7 @@ const resolveConfigPath = (): Effect.Effect<string, ConfigError> => {
 };
 
 const missingConfigMessage = (path: string): string =>
-  `No account config at ${path}. Create it with one [[accounts]] block per account containing email, name, and host (port defaults to 993, secure to true, user to the email), then run: pim login`;
+  `No account config at ${path}. Create it with one [accounts."<email>"] table per account containing name and at least one of: mail = { host = "<imap host>" } (port defaults to 993, secure to true, user to the email, auth to "password"), dav = { url = "<https DAV root>" }, graph = {}. Then run: pim login`;
 
 const loadAccounts = Effect.gen(function* () {
   const path = yield* resolveConfigPath();

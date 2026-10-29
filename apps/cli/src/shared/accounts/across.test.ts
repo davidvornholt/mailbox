@@ -7,11 +7,13 @@ import { acrossAccounts } from './across';
 const accountFor = (email: string): Account => ({
   email,
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: email,
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: email,
+    auth: 'password',
+  },
   dav: { url: 'https://dav.example.com/', user: email },
 });
 

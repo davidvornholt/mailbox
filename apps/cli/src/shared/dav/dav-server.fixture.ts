@@ -107,11 +107,13 @@ export const discoveryRoutes: Readonly<Record<string, FakeRoute>> = {
 export const davAccount: Account = {
   email: 'me@example.com',
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'me@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'me@example.com',
+    auth: 'password',
+  },
   dav: { url: davLogin.url, user: davLogin.user },
 };
 

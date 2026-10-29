@@ -77,7 +77,7 @@ describe('pim cli', () => {
         {
           email: 'test@example.com',
           name: 'Test Account',
-          host: 'imap.test.example',
+          mail: expect.objectContaining({ host: 'imap.test.example' }),
         },
       ]);
     },

@@ -15,7 +15,7 @@ This builds a standalone binary to `~/.local/bin/pim` and installs the agent ski
 
 ## Configure
 
-Copy [`apps/cli/accounts.example.toml`](apps/cli/accounts.example.toml) to `~/.config/pim/accounts.toml` (or set `PIM_CONFIG`) and add one `[[accounts]]` block per account. Then log in to each account and check that it works:
+Copy [`apps/cli/accounts.example.toml`](apps/cli/accounts.example.toml) to `~/.config/pim/accounts.toml` (or set `PIM_CONFIG`). It has one `[accounts."<email>"]` table per account with a `name` and at least one service: `mail` for IMAP, `dav` for calendars and contacts, and `graph` for Outlook calendars. Unknown keys are rejected, and `pim accounts` prints each account with its defaults filled in. Then log in to each account and check that it works:
 
 ```bash
 pim login
@@ -26,19 +26,19 @@ pim status
 
 ### Calendars and contacts
 
-An account gets calendars and contacts from an `[accounts.dav]` table with the server's DAV root URL, such as `https://sync.infomaniak.com/` for Infomaniak. pim finds the calendars and address books from there. `user` defaults to the IMAP user; some providers, Infomaniak among them, use a separate DAV username and app password. `pim login --account <email> --only dav` logs in to calendars and contacts alone.
+An account gets calendars and contacts from a `dav` table with the server's DAV root URL, such as `dav = { url = "https://sync.infomaniak.com/" }` for Infomaniak. pim finds the calendars and address books from there. `user` defaults to the mail user; some providers, Infomaniak among them, use a separate DAV username and app password. `pim login --account <email> --only dav` logs in to calendars and contacts alone.
 
 ### Outlook and Microsoft 365
 
-Microsoft does not accept passwords over IMAP, so these accounts need `auth = "microsoft"` and `host = "outlook.office365.com"`. `pim login` then shows a code to enter at Microsoft's sign-in page in any browser and stores the resulting refresh token instead of a password. Each command trades it for a short-lived access token, and a sign-in lasts until Microsoft revokes it or it goes 90 days unused.
+Microsoft does not accept passwords over IMAP, so these accounts need `mail = { host = "outlook.office365.com", auth = "microsoft" }`. `pim login` then shows a code to enter at Microsoft's sign-in page in any browser and stores the resulting refresh token instead of a password. Each command trades it for a short-lived access token, and a sign-in lasts until Microsoft revokes it or it goes 90 days unused.
 
 For mail, pim uses Mozilla Thunderbird's public app ID, so Microsoft's consent screen asks you to allow Thunderbird. Work or school tenants can block IMAP, device code sign-in, or apps that an administrator has not approved; in that case, ask the administrator.
 
 ### Outlook calendars
 
-An `[accounts.graph]` table gives an account its Outlook calendars through Microsoft Graph, including calendars others shared with the user. pim only reads Outlook calendars for now.
+A `graph` table, such as `graph = {}`, gives an account its Outlook calendars through Microsoft Graph, including calendars others shared with the user. pim only reads Outlook calendars for now.
 
-For Outlook calendars, pim uses its own app ID and asks for read and write access to the user's calendars and those shared with them, so that writing later needs no new consent. `pim login` shows a link for it instead of a code. Open the link in a browser on the same computer, because Microsoft returns the sign-in to pim through a local address. Work or school tenants that do not let users consent to apps from unverified publishers need an administrator to consent to pim once. Alternatively, register an app in the tenant and set its application ID as `client-id` in `[accounts.graph]`. pim signs in through Microsoft's `common` endpoint, so the app must support accounts in any organizational directory, plus personal Microsoft accounts for Outlook.com; it must also have the mobile and desktop redirect URI `http://localhost` and the delegated Microsoft Graph permissions `Calendars.ReadWrite` and `Calendars.ReadWrite.Shared`.
+For Outlook calendars, pim uses its own app ID and asks for read and write access to the user's calendars and those shared with them, so that writing later needs no new consent. `pim login` shows a link for it instead of a code. Open the link in a browser on the same computer, because Microsoft returns the sign-in to pim through a local address. Work or school tenants that do not let users consent to apps from unverified publishers need an administrator to consent to pim once. Alternatively, register an app in the tenant and set its application ID as `client-id` in the account's `graph` table. pim signs in through Microsoft's `common` endpoint, so the app must support accounts in any organizational directory, plus personal Microsoft accounts for Outlook.com; it must also have the mobile and desktop redirect URI `http://localhost` and the delegated Microsoft Graph permissions `Calendars.ReadWrite` and `Calendars.ReadWrite.Shared`.
 
 ## Use
 

@@ -10,11 +10,13 @@ import { readMessage } from './imap-ops';
 const account: Account = {
   email: 'sender@example.com',
   name: 'Example Sender',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'sender@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'sender@example.com',
+    auth: 'password',
+  },
 };
 const existingBcc = 'hidden@example.com';
 const reindexedUidValidity = 222n;

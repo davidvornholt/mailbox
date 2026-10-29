@@ -1,5 +1,8 @@
 import { Effect } from 'effect';
-import type { UnknownAccountError } from '../../../shared/errors/accounts';
+import type {
+  MailNotConfiguredError,
+  UnknownAccountError,
+} from '../../../shared/errors/accounts';
 import { type MailError, SearchAccountsError } from '../errors/errors';
 import type {
   SearchHit,
@@ -36,7 +39,7 @@ type SearchAccountsInput = {
   readonly options: SearchOptionsInput;
   readonly validateAccount: (
     account: string,
-  ) => Effect.Effect<unknown, UnknownAccountError>;
+  ) => Effect.Effect<unknown, UnknownAccountError | MailNotConfiguredError>;
   readonly searchMailbox: SearchMailbox;
   readonly searchMailboxWithinDeadline: SearchMailbox;
 };
@@ -89,6 +92,12 @@ export const searchAllAccounts = (
   searchMailbox: SearchMailbox,
 ): Effect.Effect<SearchResult, SearchAccountsError> =>
   Effect.gen(function* () {
+    if (accounts.length === 0) {
+      return yield* new SearchAccountsError({
+        message:
+          'No account has mail: add a mail table to an account in the account config',
+      });
+    }
     const outcomes = yield* Effect.forEach(
       accounts,
       (account) =>

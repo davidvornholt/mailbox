@@ -1,19 +1,21 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import type { Account } from '../../../shared/accounts/account';
+import type { MailAccount, MailAuth } from '../../../shared/accounts/account';
 import { OAuthError } from '../../../shared/errors/accounts';
 import { ImapError } from '../errors/errors';
 import type { ImapLogin } from './imap-client';
 import { imapLoginFor, passwordLogin, storeVerifiedLogin } from './login';
 
-const account: Account = {
+const account: MailAccount = {
   email: 'me@example.com',
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'me@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'me@example.com',
+    auth: 'password',
+  },
 };
 
 describe('storeVerifiedLogin', () => {
@@ -82,10 +84,15 @@ describe('imapLoginFor', () => {
     };
   };
   const loginFor = (
-    auth: Account['auth'],
+    auth: MailAuth,
     credentials: Parameters<typeof imapLoginFor>[1],
   ): Promise<ImapLogin> =>
-    Effect.runPromise(imapLoginFor({ ...account, auth }, credentials));
+    Effect.runPromise(
+      imapLoginFor(
+        { ...account, mail: { ...account.mail, auth } },
+        credentials,
+      ),
+    );
 
   it('logs in to a password account with the stored password', async () => {
     const { credentials, refreshed } = credentialsWith(() =>
@@ -126,7 +133,12 @@ describe('imapLoginFor', () => {
     );
 
     const result = await Effect.runPromise(
-      Effect.flip(imapLoginFor({ ...account, auth: 'microsoft' }, credentials)),
+      Effect.flip(
+        imapLoginFor(
+          { ...account, mail: { ...account.mail, auth: 'microsoft' } },
+          credentials,
+        ),
+      ),
     );
 
     expect(result).toMatchObject({ _tag: 'OAuthError', message: 'revoked' });

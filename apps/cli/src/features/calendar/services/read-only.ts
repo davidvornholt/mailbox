@@ -24,13 +24,13 @@ export const refuseOutlookWrite = (
   if (account.dav === undefined) {
     return refusal(
       account,
-      `${account.email} has only an [accounts.graph] table, so pim cannot create, change or delete its events or answer or import invitations into its calendars`,
+      `${account.email} has only a graph table, so pim cannot create, change or delete its events or answer or import invitations into its calendars`,
     );
   }
   return href === undefined || isCalDavHref(href)
     ? Effect.void
     : refusal(
         account,
-        `${href} is an Outlook event of ${account.email}, so pim cannot change or delete it. pim writes only to the calendars of [accounts.dav], whose hrefs are paths`,
+        `${href} is an Outlook event of ${account.email}, so pim cannot change or delete it. pim writes only to the calendars of accounts with a dav table, whose hrefs are paths`,
       );
 };

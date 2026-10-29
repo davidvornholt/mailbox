@@ -16,7 +16,7 @@ export const davSettings = (
   account.dav === undefined
     ? Effect.fail(
         new DavNotConfiguredError({
-          message: `${account.email} has no calendars or contacts: its account config has no [accounts.dav] table with the server's DAV url`,
+          message: `${account.email} has no calendars or contacts: its account config has no dav table with the server's DAV url`,
         }),
       )
     : Effect.succeed(account.dav);

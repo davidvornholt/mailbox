@@ -15,6 +15,15 @@ export class UnknownAccountError extends Schema.TaggedError<UnknownAccountError>
   },
 ) {}
 
+// A mail command named an account whose config has no mail table.
+export class MailNotConfiguredError extends Schema.TaggedError<MailNotConfiguredError>()(
+  'MailNotConfiguredError',
+  {
+    account: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
 export class MissingCredentialsError extends Schema.TaggedError<MissingCredentialsError>()(
   'MissingCredentialsError',
   {

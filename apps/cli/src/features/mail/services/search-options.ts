@@ -1,5 +1,8 @@
 import { Effect } from 'effect';
-import type { UnknownAccountError } from '../../../shared/errors/accounts';
+import type {
+  MailNotConfiguredError,
+  UnknownAccountError,
+} from '../../../shared/errors/accounts';
 import { SearchInputError } from '../errors/errors';
 import {
   type SearchOptions,
@@ -20,7 +23,7 @@ type AccountSearchOptionsInput = {
   readonly options: SearchOptionsInput;
   readonly validateAccount: (
     account: string,
-  ) => Effect.Effect<unknown, UnknownAccountError>;
+  ) => Effect.Effect<unknown, UnknownAccountError | MailNotConfiguredError>;
 };
 
 const captureValidation = <Value, Error>(
@@ -90,7 +93,7 @@ export const resolveAccountSearchOptions = ({
   validateAccount,
 }: AccountSearchOptionsInput): Effect.Effect<
   SearchOptions,
-  SearchInputError | UnknownAccountError
+  SearchInputError | UnknownAccountError | MailNotConfiguredError
 > =>
   Effect.gen(function* () {
     const optionValidation = yield* captureValidation(

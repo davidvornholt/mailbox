@@ -156,7 +156,7 @@ describe('accountEvent', () => {
     expect((await failsOnFakeDav(davRoutes, effect)).error).toMatchObject({
       _tag: 'CalendarNotConfiguredError',
       message:
-        'me@example.com has no calendars: its account config has neither an [accounts.dav] table with the server DAV url nor an [accounts.graph] table for Outlook',
+        'me@example.com has no calendars: its account config has neither a dav table with the server DAV url nor a graph table for Outlook',
     });
   });
 });
@@ -195,7 +195,7 @@ describe('calendarAccounts', () => {
       failure: {
         _tag: 'CalendarNotConfiguredError',
         message:
-          'No account has calendars: add an [accounts.dav] table with the server DAV url, or an [accounts.graph] table for Outlook, to an account in the account config',
+          'No account has calendars: add a dav table with the server DAV url, or a graph table for Outlook, to an account in the account config',
       },
     });
   });

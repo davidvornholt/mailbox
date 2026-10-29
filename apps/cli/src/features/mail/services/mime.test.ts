@@ -8,11 +8,13 @@ import { buildCalendarReply, buildMime } from './mime';
 const account: Account = {
   email: 'sender@example.com',
   name: 'Example Sender',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'sender@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'sender@example.com',
+    auth: 'password',
+  },
 };
 
 const draft = (input: Partial<DraftInput>): DraftInput => ({

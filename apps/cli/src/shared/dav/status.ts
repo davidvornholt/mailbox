@@ -41,7 +41,7 @@ const verifyOne = (
     }),
   );
 
-// Reports the DAV login of each account that has [accounts.dav]. `verify:
+// Reports the DAV login of each account that has a dav table. `verify:
 // true` asks each server who is signed in; `verify: false` only checks the
 // keyring.
 export const checkDavAccounts = (

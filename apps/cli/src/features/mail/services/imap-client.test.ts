@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect, Fiber } from 'effect';
 import type { ImapFlow } from 'imapflow';
-import type { Account } from '../../../shared/accounts/account';
+import type { MailAccount } from '../../../shared/accounts/account';
 import { connectClient, makeClient } from './imap-client';
 
-const account: Account = {
+const account: MailAccount = {
   email: 'me@example.com',
   name: 'Me',
-  host: 'imap.example.com',
-  port: 993,
-  secure: true,
-  user: 'me@example.com',
-  auth: 'password',
+  mail: {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    user: 'me@example.com',
+    auth: 'password',
+  },
 };
 
 type ImapFlowWithErrorEmitter = ImapFlow & {
@@ -76,7 +78,7 @@ describe('connectClient', () => {
       response: reply,
     });
 
-  const connectFailure = async (target: Account, cause: unknown) => {
+  const connectFailure = async (target: MailAccount, cause: unknown) => {
     const client = makeClient(target, { pass: 'password' });
     client.connect = () => Promise.reject(cause);
     client.close = () => undefined;
@@ -102,7 +104,7 @@ describe('connectClient', () => {
   it('explains a rejected Microsoft sign-in', async () => {
     expect(
       await connectFailure(
-        { ...account, auth: 'microsoft' },
+        { ...account, mail: { ...account.mail, auth: 'microsoft' } },
         rejectedLogin('3 NO AUTHENTICATE failed.'),
       ),
     ).toBe(

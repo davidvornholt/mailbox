@@ -46,7 +46,7 @@ const list = defineCommand(
     name: 'calendar list',
     summary: 'List calendars',
     description:
-      'List the calendars of every account with [accounts.dav] or [accounts.graph], or of one account. Outlook calendars from [accounts.graph] include those shared with the user, and pim only reads them. Accounts that fail are listed under "failures".',
+      'List the calendars of every account with a dav or graph table, or of one account. Outlook calendars from a graph table include those shared with the user, and pim only reads them. Accounts that fail are listed under "failures".',
     flags: {
       account: flag.optionalText('email', 'List only this account'),
     },

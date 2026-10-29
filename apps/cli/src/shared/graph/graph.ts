@@ -23,7 +23,7 @@ export const graphSettings = (
   account.graph === undefined
     ? Effect.fail(
         new GraphNotConfiguredError({
-          message: `${account.email} has no Outlook calendars: its account config has no [accounts.graph] table`,
+          message: `${account.email} has no Outlook calendars: its account config has no graph table`,
         }),
       )
     : Effect.succeed(account.graph);

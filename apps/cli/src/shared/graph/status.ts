@@ -50,7 +50,7 @@ const verifyOne = (
   );
 
 // Reports the Microsoft Graph sign-in of each account that has
-// [accounts.graph]. `verify: true` reads from Microsoft Graph; `verify:
+// a graph table. `verify: true` reads from Microsoft Graph; `verify:
 // false` only checks the keyring.
 export const checkGraphAccounts = (
   accounts: ReadonlyArray<Account>,

@@ -45,7 +45,20 @@ describe('AccountConfig', () => {
     const result = await loadWith(getAccount('TEST@example.com'));
     expect(result).toMatchObject({
       _tag: 'Success',
-      success: { email: 'test@example.com', host: 'imap.test.example' },
+      success: {
+        email: 'test@example.com',
+        mail: { host: 'imap.test.example' },
+      },
+    });
+  });
+
+  it('accepts the example config', async () => {
+    Bun.env.PIM_CONFIG = Bun.fileURLToPath(
+      new URL('../../../accounts.example.toml', import.meta.url),
+    );
+    expect(await loadWith(getAccount('you@outlook.com'))).toMatchObject({
+      _tag: 'Success',
+      success: { mail: { auth: 'microsoft' }, graph: {} },
     });
   });
 
@@ -57,11 +70,11 @@ describe('AccountConfig', () => {
     );
   });
 
-  it('reads an [accounts.graph] table with its client-id', async () => {
+  it('reads a graph sub-table with its client-id', async () => {
     const path = `${tempDir}/graph.toml`;
     await Bun.write(
       path,
-      '[[accounts]]\nemail = "a@example.com"\nname = "A"\nhost = "imap.example.com"\n\n[accounts.graph]\nclient-id = "00000000-0000-4000-8000-000000000003"\n',
+      '[accounts."a@example.com"]\nname = "A"\n\n[accounts."a@example.com".graph]\nclient-id = "00000000-0000-4000-8000-000000000003"\n',
     );
     Bun.env.PIM_CONFIG = path;
     expect(await loadWith(getAccount('a@example.com'))).toMatchObject({
@@ -73,10 +86,10 @@ describe('AccountConfig', () => {
   it('explains invalid TOML and schema errors with the file path', async () => {
     const invalidToml = `${tempDir}/invalid.toml`;
     const invalidSchema = `${tempDir}/schema.toml`;
-    await Bun.write(invalidToml, '[[accounts]\n');
+    await Bun.write(invalidToml, '[accounts."a@b.com"\n');
     await Bun.write(
       invalidSchema,
-      '[[accounts]]\nemail = "a@b.com"\nname = "A"\nhots = "x"\n',
+      '[accounts."a@b.com"]\nname = "A"\nmail = { hots = "x" }\n',
     );
 
     Bun.env.PIM_CONFIG = invalidToml;
