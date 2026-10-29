@@ -36,9 +36,9 @@ For mail, pim uses Mozilla Thunderbird's public app ID, so Microsoft's consent s
 
 ### Outlook calendars
 
-An `[accounts.graph]` table gives an account its Outlook calendars through Microsoft Graph, including calendars others shared with the user. It works with either `auth` setting and an account can have it next to `[accounts.dav]`. `pim login` signs in to it separately, and `pim login --account <email> --only graph` signs in to it alone. pim only reads Outlook calendars for now: `calendar create`, `update`, `delete`, `import`, and `respond` refuse Outlook calendars and events.
+An `[accounts.graph]` table gives an account its Outlook calendars through Microsoft Graph, including calendars others shared with the user. pim only reads Outlook calendars for now.
 
-For Outlook calendars, pim uses its own app ID and asks for read and write access to the user's calendars and those shared with them, so that writing later needs no new consent. Work or school tenants that do not let users consent to apps from unverified publishers need an administrator to consent to pim once. Alternatively, register an app in the tenant that allows public client flows and has the delegated Microsoft Graph permissions `Calendars.ReadWrite` and `Calendars.ReadWrite.Shared`, and set its application ID as `client-id` in `[accounts.graph]`.
+For Outlook calendars, pim uses its own app ID and asks for read and write access to the user's calendars and those shared with them, so that writing later needs no new consent. Work or school tenants that do not let users consent to apps from unverified publishers need an administrator to consent to pim once. Alternatively, register an app in the tenant and set its application ID as `client-id` in `[accounts.graph]`. pim signs in through Microsoft's `common` endpoint, so the app must support accounts in any organizational directory, plus personal Microsoft accounts for Outlook.com; it must also allow public client flows and have the delegated Microsoft Graph permissions `Calendars.ReadWrite` and `Calendars.ReadWrite.Shared`.
 
 ## Use
 

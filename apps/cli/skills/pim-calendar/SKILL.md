@@ -8,7 +8,7 @@ description: Read the user's calendars and events over CalDAV or in Outlook, cre
 Run `pim calendar --help` for the calendar commands and `pim <command> --help` for options. Output is JSON on stdout. Errors are JSON on stderr and exit 1, or 2 for invalid arguments.
 
 - `pim calendar events` takes local dates. To answer "am I free on Friday?", pass that date as both `--from` and `--to`.
-- A recurring event appears once per occurrence, each with a `recurrenceId`. `pim calendar get` describes the whole series.
+- A recurring event appears once per occurrence, each with a `recurrenceId`. `pim calendar get` describes the whole series of a CalDAV event, and the occurrence of an Outlook event together with its series' rule.
 - Keep each event's `account` and `href`; `pim calendar get` needs them.
 - Read `failures` before saying a day is free: a calendar that failed may hold events.
 - pim only reads Outlook calendars for now. Outlook calendars and events have ids without slashes as `href`, and their events have no `etag`. To change an Outlook event, add one, or answer an invitation in Outlook, ask the user to do it in Outlook.
