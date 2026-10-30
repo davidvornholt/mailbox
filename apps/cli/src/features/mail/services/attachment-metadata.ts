@@ -41,6 +41,15 @@ const toAttachment = (
   };
 };
 
+// imapflow numbers the parts of a multipart message but leaves the body of
+// any other message without a number. IMAP numbers that body part 1 (RFC
+// 3501, section 6.4.5), so a message that is a single file, such as a scan
+// or an invitation, has its attachment there.
+const numbered = (structure: MessageStructureObject): MessageStructureObject =>
+  structure.part === undefined && structure.childNodes === undefined
+    ? { ...structure, part: '1' }
+    : structure;
+
 export const listAttachments = (
   structure: MessageStructureObject | undefined,
 ): ReadonlyArray<MessageAttachment> => {
@@ -48,7 +57,7 @@ export const listAttachments = (
     return [];
   }
   const attachments: Array<MessageAttachment> = [];
-  const pending = [structure];
+  const pending = [numbered(structure)];
   while (pending.length > 0) {
     const node = pending.pop();
     if (node !== undefined) {
@@ -67,7 +76,7 @@ export const findAttachment = (
   structure: MessageStructureObject | undefined,
   part: string,
 ): MessageAttachment | undefined => {
-  const pending = structure === undefined ? [] : [structure];
+  const pending = structure === undefined ? [] : [numbered(structure)];
   while (pending.length > 0) {
     const node = pending.pop();
     if (node?.part === part) {
