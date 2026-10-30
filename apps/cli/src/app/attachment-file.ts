@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Effect } from 'effect';
 import type { AttachmentContent } from '../features/mail/schemas/mail';
 import { UsageError } from '../shared/command-line';
@@ -7,7 +8,6 @@ const pathSeparators = /[/\\]/u;
 const controlCharacters = /\p{Cc}/gu;
 // Whitespace too: " .env" must not become the hidden file ".env".
 const leadingDotsAndSpace = /^[\s.]+/u;
-const trailingSlashes = /\/+$/u;
 
 // Sender-controlled filenames must not choose the directory or create hidden
 // files, so only the last path segment survives, without control characters
@@ -70,7 +70,7 @@ export const writeAttachment = (
     const target = yield* statPath(out);
     const path =
       target?.isDirectory() === true
-        ? `${out.replace(trailingSlashes, '')}/${safeFilename(attachment.filename, attachment.part)}`
+        ? join(out, safeFilename(attachment.filename, attachment.part))
         : out;
     yield* refuseExisting(
       path,

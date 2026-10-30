@@ -1,11 +1,14 @@
 import { afterAll, afterEach, describe, expect, it } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Effect } from 'effect';
 import { AccountConfig } from './config';
 
 const fixturePath = Bun.fileURLToPath(
   new URL('./accounts.fixture.toml', import.meta.url),
 );
-const tempDir = `${Bun.env.TMPDIR ?? '/tmp'}/pim-config-test-${crypto.randomUUID()}`;
+const tempDir = join(tmpdir(), `pim-config-test-${crypto.randomUUID()}`);
 const environmentKeys = ['PIM_CONFIG', 'XDG_CONFIG_HOME'] as const;
 const savedEnvironment = environmentKeys.map(
   (key) => [key, Bun.env[key]] as const,
@@ -22,7 +25,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await Bun.$`rm -rf ${tempDir}`;
+  await rm(tempDir, { recursive: true, force: true });
 });
 
 const loadWith = <A, E>(effect: Effect.Effect<A, E, AccountConfig>) =>
@@ -66,12 +69,12 @@ describe('AccountConfig', () => {
     Bun.env.PIM_CONFIG = '';
     Bun.env.XDG_CONFIG_HOME = tempDir;
     expect(await failureMessage()).toContain(
-      `No account config at ${tempDir}/pim/accounts.toml`,
+      `No account config at ${join(tempDir, 'pim', 'accounts.toml')}`,
     );
   });
 
   it('reads a graph sub-table with its client-id', async () => {
-    const path = `${tempDir}/graph.toml`;
+    const path = join(tempDir, 'graph.toml');
     await Bun.write(
       path,
       '[accounts."a@example.com"]\nname = "A"\n\n[accounts."a@example.com".graph]\nclient-id = "00000000-0000-4000-8000-000000000003"\n',
@@ -84,8 +87,8 @@ describe('AccountConfig', () => {
   });
 
   it('explains invalid TOML and schema errors with the file path', async () => {
-    const invalidToml = `${tempDir}/invalid.toml`;
-    const invalidSchema = `${tempDir}/schema.toml`;
+    const invalidToml = join(tempDir, 'invalid.toml');
+    const invalidSchema = join(tempDir, 'schema.toml');
     await Bun.write(invalidToml, '[accounts."a@b.com"\n');
     await Bun.write(
       invalidSchema,
