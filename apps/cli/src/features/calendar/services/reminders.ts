@@ -2,23 +2,36 @@ import { type DateTime, Result } from 'effect';
 import { parseEventTime } from './event-times';
 import { formatInstant } from './ical-time';
 
+// The times a reminder goes off again: count more times, each a number of
+// days and seconds after the one before (RFC 5545, section 3.8.6.2).
+// --reminder takes only repeats that move forward.
+export type ReminderRepeat = {
+  readonly count: number;
+  readonly days: number;
+  readonly seconds: number;
+};
+
 // When a reminder goes off: a number of days and seconds before (negative)
-// or after the start or end of the event, or a fixed instant. Days are
-// nominal and seconds exact (RFC 5545, section 3.3.6), so 1d and 24h differ
-// across a daylight saving change. Both have the same sign.
-export type ReminderTime =
+// or after the start or end of the event, or a fixed instant, and then any
+// repeats. Days are nominal and seconds exact (RFC 5545, section 3.3.6), so
+// 1d and 24h differ across a daylight saving change. Both have the same sign.
+export type ReminderTime = (
   | {
       readonly _tag: 'Relative';
       readonly days: number;
       readonly seconds: number;
       readonly related: 'start' | 'end';
     }
-  | { readonly _tag: 'Absolute'; readonly ms: number };
+  | { readonly _tag: 'Absolute'; readonly ms: number }
+) & { readonly repeat?: ReminderRepeat };
 
 export const reminderFormats =
-  'a duration before the start, like 15m, 1h30m, 1d, or 2w; a duration followed by "before start", "after start", "before end", or "after end", like 10m after end; or a date-time like 2026-11-10T18:00, read in --time-zone';
+  'a duration before the start, like 15m, 1h30m, 1d, or 2w; a duration followed by "before start", "after start", "before end", or "after end", like 10m after end; or a date-time like 2026-11-10T18:00, read in --time-zone; any of these may end in "repeat <n> every <duration>" to go off n more times, like 15m repeat 2 every 5m';
 
 export const secondsPerMinute = 60;
+
+// The largest INTEGER, which REPEAT holds (RFC 5545, section 3.3.8).
+const maxRepeat = 2_147_483_647;
 
 // Largest first, so a duration prints in the largest units that fit. Weeks
 // and days count days, hours and minutes count minutes.
@@ -30,6 +43,8 @@ const durationPattern =
 const relativePattern =
   /^(?<duration>\S+)(?:\s+(?<direction>before|after)\s+(?<edge>start|end))?$/u;
 const dateTimeStart = /^\d{4}-\d{2}-\d{2}T/u;
+const repeatWord = /\s+repeat\s+/u;
+const repeatPattern = /^(?<count>\d+)\s+every\s+(?<delay>\S+)$/u;
 
 // The days and minutes of a duration like 1d2h, or none when it is not one.
 const durationOf = (
@@ -93,26 +108,51 @@ export const relativeWhen = (
   return `${formatDuration(Math.abs(days), Math.abs(minutes))} ${after ? 'after' : 'before'} ${related}`;
 };
 
+// Like " repeat 2 every 5m", or nothing without repeats. Seconds round down
+// to the minute, as in relativeWhen, so no repeat goes off later; repeats
+// less than a minute apart then print as none.
+const repeatWhen = (repeat: ReminderRepeat | undefined): string => {
+  if (repeat === undefined) {
+    return '';
+  }
+  const minutes = Math.floor(repeat.seconds / secondsPerMinute);
+  return repeat.days > 0 || minutes > 0
+    ? ` repeat ${repeat.count} every ${formatDuration(repeat.days, minutes)}`
+    : '';
+};
+
 // A reminder as "pim calendar get" prints it: relative ones as above,
-// absolute ones as a date-time with offset in `zone`.
+// absolute ones as a date-time with offset in `zone`, either followed by its
+// repeats.
 export const reminderWhen = (
   time: ReminderTime,
   zone: DateTime.TimeZone,
 ): string =>
-  time._tag === 'Absolute'
+  (time._tag === 'Absolute'
     ? formatInstant(time.ms, zone)
-    : relativeWhen(time.days, time.seconds, time.related);
+    : relativeWhen(time.days, time.seconds, time.related)) +
+  repeatWhen(time.repeat);
 
 const unknownForm = Result.fail(`must be ${reminderFormats}`);
 
-// Reads 15m or 1h30m as before the start, 10m after end and the like as
-// relative to that end of the event, and a date-time as for --start. Fails
-// with the reason, to follow the option name.
-export const parseReminder = (
-  value: string,
+// The repeats in text like 2 every 5m, or none when it is not that.
+const repeatOf = (text: string): ReminderRepeat | undefined => {
+  const groups = repeatPattern.exec(text)?.groups;
+  const count = Number(groups?.count);
+  const delay = durationOf(groups?.delay ?? '');
+  return count >= 1 &&
+    count <= maxRepeat &&
+    delay !== undefined &&
+    delay.days + delay.minutes > 0
+    ? { count, days: delay.days, seconds: delay.minutes * secondsPerMinute }
+    : undefined;
+};
+
+// The first time of a reminder, without its repeats.
+const firstTimeOf = (
+  text: string,
   zone: DateTime.TimeZone,
 ): Result.Result<ReminderTime, string> => {
-  const text = value.trim();
   const relative = relativePattern.exec(text)?.groups;
   const duration = durationOf(relative?.duration ?? '');
   if (relative !== undefined && duration !== undefined) {
@@ -133,4 +173,22 @@ export const parseReminder = (
       ? Result.succeed({ _tag: 'Absolute', ms: time.ms })
       : unknownForm,
   );
+};
+
+// Reads 15m or 1h30m as before the start, 10m after end and the like as
+// relative to that end of the event, and a date-time as for --start, each
+// with any repeats after "repeat". Fails with the reason, to follow the
+// option name.
+export const parseReminder = (
+  value: string,
+  zone: DateTime.TimeZone,
+): Result.Result<ReminderTime, string> => {
+  const [base = '', suffix, ...rest] = value.trim().split(repeatWord);
+  if (suffix === undefined) {
+    return firstTimeOf(base, zone);
+  }
+  const repeat = rest.length === 0 ? repeatOf(suffix) : undefined;
+  return repeat === undefined
+    ? unknownForm
+    : Result.map(firstTimeOf(base, zone), (time) => ({ ...time, repeat }));
 };

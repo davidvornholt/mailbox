@@ -33,6 +33,13 @@ describe('parseReminder', () => {
     ['2026-11-10T18:00', absolute('2026-11-10T17:00:00Z')],
     ['2026-11-10T18:00:00+05:00', absolute('2026-11-10T13:00:00Z')],
     ['2026-11-10T18:00Z', absolute('2026-11-10T18:00:00Z')],
+    [
+      '15m repeat 2147483647 every 1d5m',
+      {
+        ...relative(-15),
+        repeat: { count: 2_147_483_647, days: 1, seconds: 300 },
+      },
+    ],
   ])('reads %p', (value, expected) => {
     expect(parseReminder(value, berlin)).toEqual(Result.succeed(expected));
   });
@@ -46,6 +53,8 @@ describe('parseReminder', () => {
     ['15m before', `must be ${reminderFormats}`],
     ['15m before middle', `must be ${reminderFormats}`],
     ['2026-11-10', `must be ${reminderFormats}`],
+    ['2026-11-10T18:00 repeat 0 every 1d', `must be ${reminderFormats}`],
+    ['2026-11-10T18:00 repeat 1 1d', `must be ${reminderFormats}`],
     ['2026-02-30T10:00', 'is not a real date and time'],
     [
       '2026-03-29T02:30',

@@ -145,26 +145,34 @@ describe('applyChanges to reminders', () => {
   });
 
   it('replaces the reminders of a series and of the occurrences that kept them', () => {
-    const occurrence = (day: string, ...alarms: ReadonlyArray<string>) =>
+    const occurrence = (date: string, ...alarms: ReadonlyArray<string>) =>
       vevent(
         'UID:series@example.com',
-        `RECURRENCE-ID;TZID=Europe/Berlin:202610${day}T100000`,
-        `DTSTART;TZID=Europe/Berlin:202610${day}T120000`,
-        `DTEND;TZID=Europe/Berlin:202610${day}T130000`,
+        `RECURRENCE-ID;TZID=Europe/Berlin:${date}T100000`,
+        `DTSTART;TZID=Europe/Berlin:${date}T120000`,
+        `DTEND;TZID=Europe/Berlin:${date}T130000`,
         'SUMMARY:Weekly sync',
         ...alarms,
       );
+    const repeated = (
+      trigger: string,
+      repeat: string,
+      ...rest: ReadonlyArray<string>
+    ) => alarm('ACTION:DISPLAY', trigger, repeat, 'DURATION:PT5M', ...rest);
     const { result, ics } = changed(
       objectOf(
         ...weeklySeries.slice(0, -1),
-        ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT30S', 'DESCRIPTION:Sync'),
+        ...repeated('TRIGGER:-PT30S', 'REPEAT:1', 'DESCRIPTION:Sync'),
         'END:VEVENT',
         ...occurrence(
-          '20',
-          ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT30S', 'DESCRIPTION:Other'),
+          '20261020',
+          ...repeated('TRIGGER:-PT30S', 'REPEAT:1', 'DESCRIPTION:Other'),
         ),
-        // Its own reminder, though both print as 1m before start.
-        ...occurrence('27', ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT60S')),
+        // Its own reminder, though both print as
+        // 1m before start repeat 1 every 5m.
+        ...occurrence('20261027', ...repeated('TRIGGER:-PT60S', 'REPEAT:1')),
+        // Its own reminder, which repeats once more.
+        ...occurrence('20261103', ...repeated('TRIGGER:-PT30S', 'REPEAT:2')),
       ),
       { reminders: [minutesBefore(60)] },
     );
@@ -173,6 +181,7 @@ describe('applyChanges to reminders', () => {
       'TRIGGER:-PT1H',
       'TRIGGER:-PT1H',
       'TRIGGER:-PT60S',
+      'TRIGGER:-PT30S',
     ]);
   });
 });
@@ -196,13 +205,21 @@ describe('eventDetail', () => {
             'REPEAT:2',
             'DURATION:PT5M',
           ),
-          // 5 minutes after a day before fits in no one duration, so it
-          // goes off a day before.
+          // A day before, then 5 minutes later, which no one duration holds.
           ...alarm(
             'ACTION:DISPLAY',
             'TRIGGER:-P1D',
             'REPEAT:1',
             'DURATION:PT5M',
+          ),
+          // For a start at 18:00 on 2026-03-28 in Berlin, this goes off again
+          // at 05:00 UTC on 2026-03-30, a day after the first time; P1DT12H
+          // after the start, which counts the day first, is 04:00 UTC.
+          ...alarm(
+            'ACTION:DISPLAY',
+            'TRIGGER:PT12H',
+            'REPEAT:1',
+            'DURATION:P1D',
           ),
           ...alarm('ACTION:DISPLAY', 'TRIGGER:-P1DT2H'),
           // Days are nominal and hours exact (RFC 5545, section 3.3.6): for
@@ -221,13 +238,13 @@ describe('eventDetail', () => {
     expect(detail.reminders).toEqual([
       { when: '15m before start' },
       { when: '10m after end', action: 'audio' },
-      { when: '2026-11-10T18:00:00+01:00', action: 'email' },
-      { when: '2026-11-10T18:10:00+01:00', action: 'email' },
-      { when: '15m before start' },
-      { when: '10m before start' },
-      { when: '5m before start' },
-      { when: '1d before start' },
-      { when: '1d before start' },
+      {
+        when: '2026-11-10T18:00:00+01:00 repeat 1 every 10m',
+        action: 'email',
+      },
+      { when: '15m before start repeat 2 every 5m' },
+      { when: '1d before start repeat 1 every 5m' },
+      { when: '12h after start repeat 1 every 1d' },
       { when: '1d2h before start' },
       { when: '1d before start' },
       { when: '24h before start' },
@@ -239,21 +256,41 @@ describe('eventDetail', () => {
         Result.getOrThrow(parseReminder(when, berlin)),
       ),
     });
-    expect(alarmsIn(ics).map((lines) => lines[1])).toEqual([
-      'TRIGGER:-PT15M',
-      'TRIGGER;RELATED=END:PT10M',
-      'TRIGGER;VALUE=DATE-TIME:20261110T170000Z',
-      'TRIGGER;VALUE=DATE-TIME:20261110T171000Z',
-      'TRIGGER:-PT15M',
-      'TRIGGER:-PT10M',
-      'TRIGGER:-PT5M',
-      'TRIGGER:-P1D',
-      'TRIGGER:-P1D',
-      'TRIGGER:-P1DT2H',
-      'TRIGGER:-P1D',
-      'TRIGGER:-PT24H',
-      'TRIGGER:-PT1M',
-      'TRIGGER:PT0S',
+    // The lines between ACTION and DESCRIPTION.
+    expect(alarmsIn(ics).map((lines) => lines.slice(1, -1))).toEqual([
+      ['TRIGGER:-PT15M'],
+      ['TRIGGER;RELATED=END:PT10M'],
+      [
+        'TRIGGER;VALUE=DATE-TIME:20261110T170000Z',
+        'REPEAT:1',
+        'DURATION:PT10M',
+      ],
+      ['TRIGGER:-PT15M', 'REPEAT:2', 'DURATION:PT5M'],
+      ['TRIGGER:-P1D', 'REPEAT:1', 'DURATION:PT5M'],
+      ['TRIGGER:PT12H', 'REPEAT:1', 'DURATION:P1D'],
+      ['TRIGGER:-P1DT2H'],
+      ['TRIGGER:-P1D'],
+      ['TRIGGER:-PT24H'],
+      ['TRIGGER:-PT1M'],
+      ['TRIGGER:PT0S'],
+    ]);
+    // More repeats than --reminder takes, which pim still prints.
+    const often = eventDetail(
+      objectOf(
+        ...planning(
+          ...alarm(
+            'ACTION:DISPLAY',
+            'TRIGGER:-PT15M',
+            'REPEAT:1000000000000',
+            'DURATION:PT5M',
+          ),
+        ),
+      ),
+      { account: 'me@example.com', href: '/a.ics', etag: undefined },
+      berlin,
+    );
+    expect(often.reminders).toEqual([
+      { when: '15m before start repeat 1000000000000 every 5m' },
     ]);
   });
 });

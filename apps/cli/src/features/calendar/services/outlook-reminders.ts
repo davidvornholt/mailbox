@@ -13,7 +13,7 @@ import {
 const minutesPerDay = 1440;
 
 // Outlook keeps one reminder per event, a whole number of minutes before its
-// start, in these two properties.
+// start, without repeats, in these two properties.
 type GraphReminder = {
   readonly isReminderOn?: boolean;
   readonly reminderMinutesBeforeStart?: number;
@@ -49,6 +49,7 @@ export const graphReminder = (
   }
   if (
     rest.length === 0 &&
+    first.repeat === undefined &&
     first._tag === 'Relative' &&
     first.related === 'start' &&
     first.days <= 0 &&
@@ -65,7 +66,7 @@ export const graphReminder = (
   return Effect.fail(
     new EventChangeError({
       href,
-      message: `Outlook keeps one reminder per event, a whole number of minutes before the start, like --reminder 15m, so pim cannot set ${unkept(first, reminders.length, zone)}`,
+      message: `Outlook keeps one reminder per event, a whole number of minutes before the start, without repeats, like --reminder 15m, so pim cannot set ${unkept(first, reminders.length, zone)}`,
     }),
   );
 };

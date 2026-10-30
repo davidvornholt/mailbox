@@ -3,9 +3,13 @@ import ICAL from 'ical.js';
 import type { Reminder } from '../schemas/calendar';
 import type { CalendarObject } from './event-fields';
 import { instantOf } from './ical-time';
-import { type ReminderTime, reminderWhen, secondsPerMinute } from './reminders';
+import {
+  type ReminderRepeat,
+  type ReminderTime,
+  reminderWhen,
+  secondsPerMinute,
+} from './reminders';
 
-const msPerSecond = 1000;
 const secondsPerHour = 3600;
 const secondsPerDay = 86_400;
 const daysPerWeek = 7;
@@ -72,54 +76,48 @@ const textOf = (
 const actionOf = (alarm: ICAL.Component): string | undefined =>
   textOf(alarm, 'action')?.toLowerCase();
 
-// The times an alarm goes off: its trigger, then REPEAT more times, each
-// DURATION after the one before (RFC 5545, section 3.8.6.2). No one
-// duration holds days one way and seconds the other, like 5 minutes after a
-// day before the start, so such a time keeps only the part that points
-// earlier and goes off no later.
-const firingsOf = (
-  alarm: ICAL.Component,
-  local: DateTime.TimeZone,
-): ReadonlyArray<ReminderTime> => {
-  const first = triggerOf(alarm, local);
-  const repeat = Number(alarm.getFirstPropertyValue('repeat'));
+// The repeats of a VALARM: REPEAT more times, each DURATION after the one
+// before (RFC 5545, section 3.8.6.2). An alarm with REPEAT:0, or with one of
+// the two alone, goes off once.
+const repeatOf = (alarm: ICAL.Component): ReminderRepeat | undefined => {
+  const count = alarm.getFirstPropertyValue('repeat');
   const delay = alarm.getFirstPropertyValue('duration');
-  if (first === undefined) {
-    return [];
-  }
-  if (!(delay instanceof ICAL.Duration && repeat > 0)) {
-    return [first];
-  }
-  const step = partsOf(delay);
-  return Array.from({ length: repeat + 1 }, (_, count): ReminderTime => {
-    if (first._tag === 'Absolute') {
-      // An absolute trigger is in UTC, where a day lasts 24 hours.
-      const seconds = step.days * secondsPerDay + step.seconds;
-      return { _tag: 'Absolute', ms: first.ms + count * seconds * msPerSecond };
-    }
-    const days = first.days + count * step.days;
-    const seconds = first.seconds + count * step.seconds;
-    const mixed = days * seconds < 0;
-    return {
-      ...first,
-      days: mixed ? Math.min(days, 0) : days,
-      seconds: mixed ? Math.min(seconds, 0) : seconds,
-    };
-  });
+  return typeof count === 'number' &&
+    count >= 1 &&
+    delay instanceof ICAL.Duration
+    ? { count, ...partsOf(delay) }
+    : undefined;
 };
 
-// The reminders of an event, one for each time its VALARMs go off. Display
-// alarms, which show a message, leave out the action.
+// When a VALARM goes off, to the second, or none when it has no trigger.
+const reminderOf = (
+  alarm: ICAL.Component,
+  local: DateTime.TimeZone,
+): ReminderTime | undefined => {
+  const time = triggerOf(alarm, local);
+  const repeat = repeatOf(alarm);
+  return time === undefined || repeat === undefined
+    ? time
+    : { ...time, repeat };
+};
+
+// The reminders of an event, from its VALARMs. Display alarms, which show a
+// message, leave out the action.
 export const remindersOf = (
   component: ICAL.Component,
   local: DateTime.TimeZone,
 ): ReadonlyArray<Reminder> =>
   component.getAllSubcomponents('valarm').flatMap((alarm) => {
+    const time = reminderOf(alarm, local);
     const action = actionOf(alarm);
-    return firingsOf(alarm, local).map((time) => ({
-      when: reminderWhen(time, local),
-      ...(action === undefined || action === 'display' ? {} : { action }),
-    }));
+    return time === undefined
+      ? []
+      : [
+          {
+            when: reminderWhen(time, local),
+            ...(action === undefined || action === 'display' ? {} : { action }),
+          },
+        ];
   });
 
 const isAllDay = (component: ICAL.Component): boolean => {
@@ -140,11 +138,12 @@ const durationOf = (days: number, seconds: number): ICAL.Duration => {
   });
 };
 
-// A display alarm that shows the event's title. RELATED=END needs DTEND or
-// DURATION (RFC 5545, section 3.8.6.3); without them, a timed event ends at
-// its start and an all-day event a day after it, so the trigger is moved to
-// the start. A day after the start and some hours before it fit in no one
-// duration, so such a trigger counts the day as 24 hours.
+// A display alarm that shows the event's title and repeats as the reminder
+// does. RELATED=END needs DTEND or DURATION (RFC 5545, section 3.8.6.3);
+// without them, a timed event ends at its start and an all-day event a day
+// after it, so the trigger is moved to the start. A day after the start and
+// some hours before it fit in no one duration, so such a trigger counts the
+// day as 24 hours.
 const alarmOf = (component: ICAL.Component, time: ReminderTime) => {
   const alarm = new ICAL.Component('valarm');
   alarm.addPropertyWithValue('action', 'DISPLAY');
@@ -169,6 +168,13 @@ const alarmOf = (component: ICAL.Component, time: ReminderTime) => {
       trigger.setParameter('related', 'END');
     }
   }
+  if (time.repeat !== undefined) {
+    alarm.addPropertyWithValue('repeat', time.repeat.count);
+    alarm.addPropertyWithValue(
+      'duration',
+      durationOf(time.repeat.days, time.repeat.seconds),
+    );
+  }
   alarm.addPropertyWithValue(
     'description',
     textOf(component, 'summary') ?? 'Reminder',
@@ -188,8 +194,8 @@ export const setAlarms = (
   }
 };
 
-// The alarms of an event in a form that compares to the second, whatever
-// their order and text.
+// The alarms of an event in a form that compares their actions, triggers,
+// and repeats to the second, whatever their order and text.
 const alarmsKey = (
   component: ICAL.Component,
   local: DateTime.TimeZone,
@@ -197,7 +203,7 @@ const alarmsKey = (
   component
     .getAllSubcomponents('valarm')
     .map((alarm) =>
-      JSON.stringify([actionOf(alarm), triggerOf(alarm, local) ?? null]),
+      JSON.stringify([actionOf(alarm), reminderOf(alarm, local) ?? null]),
     )
     .sort()
     .join('\n');

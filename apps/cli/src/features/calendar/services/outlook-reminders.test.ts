@@ -32,7 +32,7 @@ const refusal = (unkept: string) => ({
   failure: {
     _tag: 'EventChangeError',
     href: 'event-1',
-    message: `Outlook keeps one reminder per event, a whole number of minutes before the start, like --reminder 15m, so pim cannot set ${unkept}`,
+    message: `Outlook keeps one reminder per event, a whole number of minutes before the start, without repeats, like --reminder 15m, so pim cannot set ${unkept}`,
   },
 });
 
@@ -69,6 +69,10 @@ describe('graphReminder', () => {
     [
       'a reminder at 2026-11-10T18:00:00+01:00',
       [{ _tag: 'Absolute', ms: Date.parse('2026-11-10T17:00:00Z') } as const],
+    ],
+    [
+      'a reminder 15m before start repeat 2 every 5m',
+      [{ ...relative(-15), repeat: { count: 2, days: 0, seconds: 300 } }],
     ],
   ])('refuses %s', (unkept, reminders) => {
     expect(reminderOf(reminders)).toMatchObject(refusal(unkept));
