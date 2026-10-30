@@ -20,6 +20,7 @@ import {
   single,
   target,
   trip,
+  unfolded,
 } from './caldav-write.fixture';
 import { berlin, icsOf, weeklySeries } from './ical.fixture';
 
@@ -51,6 +52,7 @@ describe('createEvent', () => {
       end: '2026-10-31',
       allDay: true,
       attendees: [],
+      reminders: [],
     });
     expect(put?.url).toBe(`https://dav.example.com${value.href}`);
     expect(put?.headers.get('if-none-match')).toBe('*');
@@ -59,6 +61,33 @@ describe('createEvent', () => {
     );
     expect(put?.body).toContain(`UID:${uid}`);
     expect(put?.body).not.toMatch(scheduling);
+  });
+
+  it('writes the reminders of a new event', async () => {
+    const { value, requests } = await succeedsOnFakeDav(
+      {
+        ...calendarRoutes,
+        'PUT /calendars/me/work/*': { status: 201, headers: { etag: '"e1"' } },
+      },
+      createCalDavEvent(
+        davAccount,
+        {
+          calendar: 'Work',
+          ...trip,
+          reminders: [
+            { _tag: 'Relative', days: 0, seconds: -64_800, related: 'start' },
+          ],
+          attendees: [],
+          notifyAttendees: false,
+        },
+        berlin,
+      ),
+    );
+    expect(value.reminders).toEqual([{ when: '18h before start' }]);
+    const [put] = writeRequests(requests);
+    expect(unfolded(put?.body)).toContain(
+      'BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT18H\r\nDESCRIPTION:Trip\r\nEND:VALARM',
+    );
   });
 
   it('refuses a calendar the user may only read', async () => {
@@ -180,6 +209,45 @@ describe('updateEvent', () => {
     );
     expect(error._tag).toBe('DavConflictError');
   });
+});
+
+describe('updateEvent with reminders', () => {
+  it('replaces the reminders of an event', async () => {
+    const { value, requests } = await succeedsOnFakeDav(
+      eventRoutes(icsOf(...single)),
+      updateCalDavEvent(
+        davAccount,
+        target(),
+        {
+          reminders: [
+            { _tag: 'Relative', days: 0, seconds: -900, related: 'start' },
+          ],
+        },
+        berlin,
+      ),
+    );
+    expect(value.reminders).toEqual([{ when: '15m before start' }]);
+    const [put] = writeRequests(requests);
+    expect(put?.headers.get('if-match')).toBe('"v1"');
+    expect(unfolded(put?.body)).toContain('TRIGGER:-PT15M');
+  });
+
+  // A server may email the attendees about any change the organizer makes,
+  // and an attendee's change may reach the organizer.
+  it.each([
+    ['without --notify-attendees', meeting, target()],
+    ['someone else organizes', invitation, target({ notifyAttendees: true })],
+  ])(
+    'refuses to change only the reminders of a meeting %s',
+    async (_name, event, wanted) => {
+      const { error, requests } = await failsOnFakeDav(
+        eventRoutes(icsOf(...event)),
+        updateCalDavEvent(davAccount, wanted, { reminders: [] }, berlin),
+      );
+      expect(error._tag).toBe('EventHasAttendeesError');
+      expect(writeRequests(requests)).toEqual([]);
+    },
+  );
 });
 
 describe('updateEvent on a server that changes the event', () => {
