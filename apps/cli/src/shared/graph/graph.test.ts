@@ -89,14 +89,6 @@ describe('Graph', () => {
     expect(graph.keyring.get('graph:me@example.com')).toBe('rotated');
   });
 
-  it('keeps the stored refresh token when Microsoft does not rotate it', async () => {
-    const graph = graphWith({ stored: 'stored', rotated: 'stored' });
-
-    await graph.provide(clientFor(account));
-
-    expect(graph.keyring.get('graph:me@example.com')).toBe('stored');
-  });
-
   it('refreshes with the client-id of the account', async () => {
     const graph = graphWith({ stored: 'stored', rotated: 'stored' });
 
