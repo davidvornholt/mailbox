@@ -1,31 +1,25 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { Context, Effect, Layer, Result } from 'effect';
 import { ConfigError, UnknownAccountError } from '../errors/accounts';
 import { type Account, decodeAccounts, findAccount } from './account';
 
-// PIM_CONFIG overrides the XDG location (tests point it at fixtures).
-const resolveConfigPath = (): Effect.Effect<string, ConfigError> => {
-  const override = Bun.env.PIM_CONFIG;
-  if (override !== undefined && override !== '') {
-    return Effect.succeed(override);
-  }
-  const configHome =
-    Bun.env.XDG_CONFIG_HOME ||
-    (Bun.env.HOME === undefined ? undefined : `${Bun.env.HOME}/.config`);
-  return configHome === undefined
-    ? Effect.fail(
-        new ConfigError({
-          message:
-            'Cannot locate the account config: set PIM_CONFIG, XDG_CONFIG_HOME, or HOME.',
-        }),
-      )
-    : Effect.succeed(`${configHome}/pim/accounts.toml`);
-};
+// PIM_CONFIG overrides the XDG location (tests point it at fixtures). Every OS
+// uses ~/.config, and os.homedir() finds the home directory on Windows, which
+// usually has no HOME.
+const configPath = (): string =>
+  Bun.env.PIM_CONFIG ||
+  join(
+    Bun.env.XDG_CONFIG_HOME || join(homedir(), '.config'),
+    'pim',
+    'accounts.toml',
+  );
 
 const missingConfigMessage = (path: string): string =>
   `No account config at ${path}. Create it with one [accounts."<email>"] table per account containing name and at least one of: mail = { host = "<imap host>" } (port defaults to 993, secure to true, user to the email, auth to "password"), dav = { url = "<https DAV root>" }, graph = {}. Then run: pim login`;
 
 const loadAccounts = Effect.gen(function* () {
-  const path = yield* resolveConfigPath();
+  const path = configPath();
   const file = Bun.file(path);
   const exists = yield* Effect.promise(() => file.exists());
   if (!exists) {

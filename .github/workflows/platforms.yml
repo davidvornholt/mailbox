@@ -1,0 +1,79 @@
+name: Platforms
+
+# Tests pim and its installer on each OS it supports. Unlike the Standards
+# gate, this runs on draft pull requests too: macOS and Windows can't be
+# checked locally, so a draft is where changes get tested on them. It is not a
+# required check.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  install:
+    name: Install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read Bun version
+        id: bun
+        run: |
+          version="$(node -p 'require("./package.json").packageManager.replace(/^bun@/, "")')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun.outputs.version }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        working-directory: apps/cli
+        run: bun test
+
+      # The installer finds the home directory through HOME on Linux and macOS
+      # and USERPROFILE on Windows. The second run replaces the installed
+      # binary, as an update does.
+      - name: Install pim in a temporary home
+        env:
+          HOME: ${{ runner.temp }}/home
+          USERPROFILE: ${{ runner.temp }}/home
+        run: |
+          bun run --filter @pim/cli install:user
+          bun run --filter @pim/cli install:user
+
+      - name: Check the installed binary and skills
+        env:
+          INSTALL_HOME: ${{ runner.temp }}/home
+          EXE: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          "$INSTALL_HOME/.local/bin/pim$EXE" --help
+          for skill in apps/cli/skills/*/SKILL.md; do
+            cmp "$skill" "$INSTALL_HOME/.agents/skills/${skill#apps/cli/skills/}"
+          done

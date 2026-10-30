@@ -1,9 +1,12 @@
 import { afterAll, describe, expect, it } from 'bun:test';
+import { mkdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Effect, Result } from 'effect';
 import type { AttachmentContent } from '../features/mail/schemas/mail';
 import { checkOut, safeFilename, writeAttachment } from './attachment-file';
 
-const tempDir = `${Bun.env.TMPDIR ?? '/tmp'}/pim-attachment-test-${crypto.randomUUID()}`;
+const tempDir = join(tmpdir(), `pim-attachment-test-${crypto.randomUUID()}`);
 
 const attachment = (filename: string | null): AttachmentContent => ({
   part: '2',
@@ -19,7 +22,7 @@ const write = (file: AttachmentContent, out: string, force = false) =>
   Effect.runPromise(Effect.result(writeAttachment(file, out, force)));
 
 afterAll(async () => {
-  await Bun.$`rm -rf ${tempDir}`;
+  await rm(tempDir, { recursive: true, force: true });
 });
 
 describe('safeFilename', () => {
@@ -39,14 +42,15 @@ describe('safeFilename', () => {
 
 describe('writeAttachment', () => {
   it('writes into an existing directory under a safe filename', async () => {
-    await Bun.$`mkdir -p ${tempDir}/into`;
-    const result = await write(attachment('../notes.txt'), `${tempDir}/into/`);
-    expect(result).toEqual(Result.succeed(`${tempDir}/into/notes.txt`));
-    expect(await Bun.file(`${tempDir}/into/notes.txt`).text()).toBe('content');
+    const into = join(tempDir, 'into');
+    await mkdir(into, { recursive: true });
+    const result = await write(attachment('../notes.txt'), `${into}/`);
+    expect(result).toEqual(Result.succeed(join(into, 'notes.txt')));
+    expect(await Bun.file(join(into, 'notes.txt')).text()).toBe('content');
   });
 
   it('keeps an existing file unless forced', async () => {
-    const path = `${tempDir}/existing.txt`;
+    const path = join(tempDir, 'existing.txt');
     await Bun.write(path, 'original');
     const refused = await write(attachment('a.txt'), path);
     expect(refused).toMatchObject({
@@ -63,7 +67,7 @@ describe('writeAttachment', () => {
   });
 
   it('refuses an existing file before downloading', async () => {
-    const path = `${tempDir}/checked.txt`;
+    const path = join(tempDir, 'checked.txt');
     await Bun.write(path, 'original');
     const check = (out: string, force: boolean) =>
       Effect.runPromise(Effect.result(checkOut(out, force)));
@@ -73,8 +77,12 @@ describe('writeAttachment', () => {
   });
 
   it('refuses to replace a directory named like the attachment', async () => {
-    await Bun.$`mkdir -p ${tempDir}/nested/b.txt`;
-    const result = await write(attachment('b.txt'), `${tempDir}/nested`, true);
+    await mkdir(join(tempDir, 'nested', 'b.txt'), { recursive: true });
+    const result = await write(
+      attachment('b.txt'),
+      join(tempDir, 'nested'),
+      true,
+    );
     expect(result).toMatchObject({
       _tag: 'Failure',
       failure: { _tag: 'UsageError' },

@@ -6,12 +6,14 @@
 
 ## Install
 
+pim builds from source with [Bun](https://bun.sh) on Linux, macOS, and Windows. In a clone of this repository, run:
+
 ```bash
 bun install
-just install
+bun run --filter @pim/cli install:user
 ```
 
-This builds a standalone binary to `~/.local/bin/pim` and installs the agent skills from [`apps/cli/skills`](apps/cli/skills) to `~/.agents/skills`, where Codex and Claude Code find them. Run it again after pulling changes.
+`just install` does the same where [`just`](https://just.systems) is installed. This builds a standalone binary to `~/.local/bin/pim` (`pim.exe` on Windows) and installs the agent skills from [`apps/cli/skills`](apps/cli/skills) to `~/.agents/skills`, where Codex and Claude Code find them. `~` is your home folder, `%USERPROFILE%` on Windows. Run it again after pulling changes. The installer tells you when `~/.local/bin` is not on your PATH; on Windows it usually is not, so add `%USERPROFILE%\.local\bin` to your user PATH.
 
 ## Configure
 

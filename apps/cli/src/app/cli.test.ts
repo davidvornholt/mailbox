@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const cliPath = Bun.fileURLToPath(new URL('./cli.ts', import.meta.url));
 const fixturePath = Bun.fileURLToPath(
@@ -13,10 +15,20 @@ type CliResult = {
 
 const runCli = (
   args: ReadonlyArray<string>,
-  options: { readonly config?: string; readonly stdin?: string } = {},
+  options: {
+    readonly config?: string;
+    readonly home?: string;
+    readonly stdin?: string;
+  } = {},
 ): CliResult => {
   const env = { ...Bun.env };
   env.PIM_CONFIG = options.config ?? fixturePath;
+  if (options.home !== undefined) {
+    // Windows finds the home directory through USERPROFILE, not HOME.
+    env.HOME = options.home;
+    env.USERPROFILE = options.home;
+    env.XDG_CONFIG_HOME = '';
+  }
   const result = Bun.spawnSync(['bun', cliPath, ...args], {
     env,
     stdin: Buffer.from(options.stdin ?? ''),
@@ -87,11 +99,13 @@ describe('pim cli', () => {
   it(
     'exits 1 when the config is missing or the account is unknown',
     () => {
-      const missing = runCli(['accounts'], {
-        config: '/nonexistent/accounts.toml',
-      });
+      const home = join(tmpdir(), `pim-home-${crypto.randomUUID()}`);
+      const missing = runCli(['accounts'], { config: '', home });
       expect(missing.exitCode).toBe(1);
       expect(errorOf(missing).tag).toBe('ConfigError');
+      expect(errorOf(missing).message).toContain(
+        join(home, '.config', 'pim', 'accounts.toml'),
+      );
       const unknown = runCli([
         'mail',
         'folders',
