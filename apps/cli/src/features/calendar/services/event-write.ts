@@ -2,6 +2,7 @@ import type { DateTime } from 'effect';
 import { Result } from 'effect';
 import ICAL from 'ical.js';
 import { addDays, type CalendarDate, daysBetween } from './calendar-dates';
+import { replaceAlarms, setAlarms } from './event-alarms';
 import {
   addAttendees,
   attendeeChanges,
@@ -13,6 +14,7 @@ import {
 import { type CalendarObject, spanOf, text } from './event-fields';
 import { changedSpan, type EventSpan, type EventTime } from './event-times';
 import { registerIanaZones } from './ical-time';
+import type { ReminderTime } from './reminders';
 
 export const productId = '-//pim//EN';
 
@@ -28,19 +30,27 @@ export type Invitation = {
   readonly attendees: ReadonlyArray<string>;
 };
 
-export type NewEvent = EventText & {
-  readonly uid: string;
-  readonly title: string;
-  readonly span: EventSpan;
-  readonly invitation?: Invitation;
+// The reminders of a new event, or those that replace every reminder of a
+// changed one; an empty list removes them.
+export type EventReminders = {
+  readonly reminders?: ReadonlyArray<ReminderTime>;
 };
 
-export type EventChanges = EventText & {
-  readonly start?: EventTime;
-  readonly end?: EventTime;
-  readonly addAttendees?: ReadonlyArray<string>;
-  readonly removeAttendees?: ReadonlyArray<string>;
-};
+export type NewEvent = EventText &
+  EventReminders & {
+    readonly uid: string;
+    readonly title: string;
+    readonly span: EventSpan;
+    readonly invitation?: Invitation;
+  };
+
+export type EventChanges = EventText &
+  EventReminders & {
+    readonly start?: EventTime;
+    readonly end?: EventTime;
+    readonly addAttendees?: ReadonlyArray<string>;
+    readonly removeAttendees?: ReadonlyArray<string>;
+  };
 
 const utcTime = (ms: number): ICAL.Time =>
   ICAL.Time.fromJSDate(new Date(ms), true);
@@ -95,8 +105,9 @@ const setText = (
   }
 };
 
-// The iCalendar text of an event without alarms. Without an invitation it
-// has no organizer or attendees, so storing it invites no one.
+// The iCalendar text of a new event, with an alarm for each reminder.
+// Without an invitation it has no organizer or attendees, so storing it
+// invites no one.
 export const newEventIcs = (event: NewEvent, nowMs: number): string => {
   const vcalendar = new ICAL.Component(['vcalendar', [], []]);
   vcalendar.addPropertyWithValue('version', '2.0');
@@ -113,6 +124,7 @@ export const newEventIcs = (event: NewEvent, nowMs: number): string => {
       setText(vevent, name, value);
     }
   }
+  setAlarms(vevent, event.reminders ?? []);
   if (event.invitation !== undefined) {
     setOrganizer(vevent, event.invitation.organizer);
     addAttendees(vevent, event.invitation.attendees);
@@ -192,7 +204,9 @@ const applyText = (
 
 // Changes the event in place. Fails with the reason when pim does not make
 // the change, such as moving a recurring series. Moving an event asks its
-// attendees to reply again.
+// attendees to reply again. New reminders change neither the sequence,
+// which counts changes to times, recurrence, and status (RFC 5545, section
+// 3.8.7.4), nor the replies.
 export const applyChanges = (
   object: CalendarObject,
   changes: EventChanges,
@@ -230,7 +244,10 @@ export const applyChanges = (
     resetReplies(master);
     changed.add(master);
   }
-  for (const component of changeAttendees(object, attendees.success)) {
+  for (const component of [
+    ...changeAttendees(object, attendees.success),
+    ...replaceAlarms(object, changes.reminders, local),
+  ]) {
     changed.add(component);
   }
   for (const component of changed) {

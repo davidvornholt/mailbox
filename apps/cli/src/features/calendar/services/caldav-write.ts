@@ -32,6 +32,7 @@ import type { EventSpan } from './event-times';
 import {
   applyChanges,
   type EventChanges,
+  type EventReminders,
   type EventText,
   type Invitation,
   isRecurring,
@@ -58,16 +59,17 @@ export type CalDavWriteError =
   | EventChangeError
   | SchedulingUnsupportedError;
 
-export type NewEventRequest = EventText & {
-  // A calendar name or href from "pim calendar list".
-  readonly calendar: string;
-  readonly title: string;
-  readonly span: EventSpan;
-  // Addresses to invite. The server emails each of them an invitation, so
-  // pim invites them only with notifyAttendees.
-  readonly attendees: ReadonlyArray<string>;
-  readonly notifyAttendees: boolean;
-};
+export type NewEventRequest = EventText &
+  EventReminders & {
+    // A calendar name or href from "pim calendar list".
+    readonly calendar: string;
+    readonly title: string;
+    readonly span: EventSpan;
+    // Addresses to invite. The server emails each of them an invitation, so
+    // pim invites them only with notifyAttendees.
+    readonly attendees: ReadonlyArray<string>;
+    readonly notifyAttendees: boolean;
+  };
 
 // The invitation of a new event in the calendar at href, or none when the
 // event has no attendees.

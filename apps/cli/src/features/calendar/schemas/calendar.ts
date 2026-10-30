@@ -38,6 +38,15 @@ export type Attendee = {
   readonly scheduleStatus?: string;
 };
 
+// When the calendar reminds the user of the event. A relative reminder reads
+// like 15m before start or 1h30m after end, the form --reminder takes; an
+// absolute one is a local date-time with offset. The action is set for
+// alarms other than a displayed message, such as audio or email.
+export type Reminder = {
+  readonly when: string;
+  readonly action?: string;
+};
+
 export type EventChange = {
   readonly recurrenceId: string;
   readonly start: string;
@@ -80,6 +89,7 @@ export type EventDetail = {
     readonly scheduleStatus?: string;
   };
   readonly attendees: ReadonlyArray<Attendee>;
+  readonly reminders: ReadonlyArray<Reminder>;
   // The RRULE, such as FREQ=WEEKLY;BYDAY=MO, with the dates it skips and the
   // occurrences that differ from it. A series of RDATEs has no rule.
   readonly recurrence?: {

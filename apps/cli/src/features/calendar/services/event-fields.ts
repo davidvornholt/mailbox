@@ -7,6 +7,7 @@ import type {
   EventDetail,
   EventSummary,
 } from '../schemas/calendar';
+import { remindersOf } from './event-alarms';
 import { formatDate, formatInstant, instantOf } from './ical-time';
 import { endMsOf, type Occurrence, tzidOf } from './occurrences';
 
@@ -299,6 +300,7 @@ export const eventDetail = (
     ...optional('status', lowercase(text(master, 'status'))),
     ...optional('organizer', organizer),
     attendees: attendeesOf(master),
+    reminders: remindersOf(master, local),
     ...optional('recurrence', recurrence),
   };
 };
