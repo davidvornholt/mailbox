@@ -157,13 +157,14 @@ describe('applyChanges to reminders', () => {
     const { result, ics } = changed(
       objectOf(
         ...weeklySeries.slice(0, -1),
-        ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT15M', 'DESCRIPTION:Sync'),
+        ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT30S', 'DESCRIPTION:Sync'),
         'END:VEVENT',
         ...occurrence(
           '20',
-          ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT15M', 'DESCRIPTION:Other'),
+          ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT30S', 'DESCRIPTION:Other'),
         ),
-        ...occurrence('27', ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT5M')),
+        // Its own reminder, though both print as 1m before start.
+        ...occurrence('27', ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT60S')),
       ),
       { reminders: [minutesBefore(60)] },
     );
@@ -171,7 +172,7 @@ describe('applyChanges to reminders', () => {
     expect(alarmsIn(ics).map((lines) => lines[1])).toEqual([
       'TRIGGER:-PT1H',
       'TRIGGER:-PT1H',
-      'TRIGGER:-PT5M',
+      'TRIGGER:-PT60S',
     ]);
   });
 });

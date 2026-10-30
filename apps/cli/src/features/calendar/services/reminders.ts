@@ -80,13 +80,15 @@ export const formatDuration = (days: number, minutes: number): string => {
   return parts.length === 0 ? '0m' : parts.join('');
 };
 
-// Like 1h30m before start, the form --reminder takes back.
+// Like 1h30m before start, the form --reminder takes back. Seconds round
+// down to the minute, so the reminder, written back with --reminder, never
+// goes off later.
 export const relativeWhen = (
   days: number,
   seconds: number,
   related: 'start' | 'end',
 ): string => {
-  const minutes = seconds / secondsPerMinute;
+  const minutes = Math.floor(seconds / secondsPerMinute);
   const after = days > 0 || minutes > 0;
   return `${formatDuration(Math.abs(days), Math.abs(minutes))} ${after ? 'after' : 'before'} ${related}`;
 };

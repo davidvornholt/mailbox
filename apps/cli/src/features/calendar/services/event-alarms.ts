@@ -39,10 +39,7 @@ const triggerOf = (
     _tag: 'Relative',
     // Adding 0 turns -0 into 0.
     days: sign * (value.weeks * daysPerWeek + value.days) + 0,
-    // Seconds round down to the minute, so the reminder printed, written
-    // back with --reminder, never goes off later.
-    seconds:
-      Math.floor((sign * seconds) / secondsPerMinute) * secondsPerMinute + 0,
+    seconds: sign * seconds + 0,
     related:
       typeof related === 'string' && related.toUpperCase() === 'END'
         ? 'end'
@@ -149,8 +146,8 @@ export const setAlarms = (
   }
 };
 
-// The reminders of an event in a form that compares, whatever their order
-// and text.
+// The alarms of an event in a form that compares to the second, whatever
+// their order and text.
 const alarmsKey = (
   component: ICAL.Component,
   local: DateTime.TimeZone,
