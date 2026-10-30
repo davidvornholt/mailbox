@@ -4,6 +4,7 @@ dist/
 .turbo/
 *.log
 .direnv/
+result
 
 # Local secrets: decrypted SOPS output must never be committed. The encrypted
 # CI target is tracked so GitHub Actions can decrypt it with SOPS_AGE_KEY.
