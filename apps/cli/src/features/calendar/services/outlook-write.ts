@@ -13,7 +13,7 @@ import {
 import type { EventDetail } from '../schemas/calendar';
 import { newAttendees } from './event-attendees';
 import { changedSpan, type EventSpan } from './event-times';
-import type { EventChanges, EventText } from './event-write';
+import type { EventChanges, EventReminders, EventText } from './event-write';
 import {
   eventPath,
   eventPreferences,
@@ -38,6 +38,7 @@ import {
   requiredAttendee,
   teamsMeeting,
 } from './outlook-event';
+import { graphReminder } from './outlook-reminders';
 
 export type OutlookWriteError =
   | GraphRequestError
@@ -55,6 +56,7 @@ export type OutlookOptions = {
 };
 
 export type OutlookEventRequest = EventText &
+  EventReminders &
   OutlookOptions & {
     readonly title: string;
     readonly span: EventSpan;
@@ -128,6 +130,7 @@ export const createOutlookEvent = (
     if (request.teams && !allowsTeams(calendar)) {
       return yield* noTeams(client.account, calendar);
     }
+    const reminder = yield* graphReminder(calendar.id, request);
     const invited = yield* invitees(client, calendar, request);
     const written = yield* client.send(
       {
@@ -136,6 +139,7 @@ export const createOutlookEvent = (
         body: {
           ...graphText(request),
           ...graphTimes(request.span, request.zone),
+          ...reminder,
           ...(invited.length === 0
             ? {}
             : { attendees: invited.map(requiredAttendee) }),
@@ -314,6 +318,7 @@ export const updateOutlookEvent = (
   local: DateTime.TimeZone,
 ): Effect.Effect<EventDetail, OutlookWriteError> =>
   Effect.gen(function* () {
+    const reminder = yield* graphReminder(target.href, changes);
     const event = yield* currentEvent(client, target);
     if (event.isOrganizer === false) {
       return yield* othersMeeting(
@@ -338,6 +343,7 @@ export const updateOutlookEvent = (
       ...(yield* changedTimes(event, changes, local)),
       ...guests.body,
       ...(addsTeams ? teamsMeeting : {}),
+      ...reminder,
     };
     if (Object.keys(body).length === 0) {
       return yield* graphDetailOf(client, event, local);

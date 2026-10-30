@@ -74,6 +74,8 @@ export const GraphEvent = Schema.Struct({
   isOnlineMeeting: nullable(Schema.Boolean),
   onlineMeetingProvider: nullable(Schema.String),
   onlineMeeting: nullable(Schema.Struct({ joinUrl: nullable(Schema.String) })),
+  isReminderOn: nullable(Schema.Boolean),
+  reminderMinutesBeforeStart: nullable(Schema.Number),
 });
 
 export type GraphEvent = typeof GraphEvent.Type;
