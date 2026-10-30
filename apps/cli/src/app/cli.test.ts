@@ -199,6 +199,54 @@ describe('pim calendar', () => {
     },
     subprocessTimeoutMs,
   );
+
+  it(
+    'rejects invalid reminders before connecting',
+    () => {
+      const unknown = runCli([
+        'calendar',
+        'create',
+        '--account=test@example.com',
+        '--calendar=Work',
+        '--title=Call',
+        '--start=2026-10-28T10:00',
+        '--end=2026-10-28T11:00',
+        '--reminder=15m',
+        '--reminder=soon',
+      ]);
+      expect(unknown.exitCode).toBe(2);
+      expect(errorOf(unknown).message).toStartWith(
+        'pim calendar create: --reminder "soon" must be a duration before the start, like 15m',
+      );
+      const both = runCli([
+        'calendar',
+        'update',
+        '--account=test@example.com',
+        '--href=/a.ics',
+        '--etag=x',
+        '--reminder=15m',
+        '--no-reminders',
+      ]);
+      expect(both.exitCode).toBe(2);
+      expect(errorOf(both).message).toBe(
+        'pim calendar update: pass --reminder or --no-reminders, not both',
+      );
+      const removeOnCreate = runCli([
+        'calendar',
+        'create',
+        '--account=test@example.com',
+        '--calendar=Work',
+        '--title=Call',
+        '--start=2026-10-28',
+        '--no-reminders',
+      ]);
+      expect(removeOnCreate.exitCode).toBe(2);
+      expect(errorOf(removeOnCreate).message).toContain(
+        'unknown option --no-reminders',
+      );
+    },
+    subprocessTimeoutMs,
+  );
 });
 
 describe('pim contacts', () => {

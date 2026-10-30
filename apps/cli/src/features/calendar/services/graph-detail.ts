@@ -17,6 +17,7 @@ import {
   nullable,
 } from './graph-events';
 import { formatUtcStamp } from './ical-time';
+import { graphReminders } from './outlook-reminders';
 
 const RecurrencePattern = Schema.Struct({
   type: Schema.String,
@@ -365,5 +366,6 @@ export const graphEventDetail = (
   ...optional('status', graphStatus(event)),
   ...optional('organizer', organizerOf(event)),
   attendees: withOwnAnswer(event, context.account, graphAttendees(event)),
+  reminders: graphReminders(event),
   ...optional('recurrence', context.recurrence),
 });

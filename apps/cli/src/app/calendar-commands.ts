@@ -146,7 +146,7 @@ const get = defineCommand(
     name: 'calendar get',
     summary: 'Show one event',
     description:
-      'Show an event with its description, organizer, attendees, and, for a recurring event, its rule and the occurrences that differ from it. The etag identifies this version of the event. An Outlook event is the occurrence its href names, with the rule of its series and the series as seriesHref, and onlineMeeting holds the join link of a Teams meeting.',
+      "Show an event with its description, organizer, attendees, reminders, and, for a recurring event, its rule and the occurrences that differ from it. The etag identifies this version of the event. Each reminder's when works as --reminder for create and update. A reminder that does something other than show a message, like play a sound, names that in action; pim writes every reminder as a message. An Outlook event is the occurrence its href names, with the rule of its series and the series as seriesHref, and onlineMeeting holds the join link of a Teams meeting.",
     flags: {
       account: flag.text('email', 'Account from "pim calendar events"'),
       href: flag.text('href', 'Event href from "pim calendar events"'),

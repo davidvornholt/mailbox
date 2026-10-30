@@ -268,6 +268,7 @@ describe('graphEventDetail', () => {
       attendees: [
         { email: 'ana@example.com', role: 'chair', partstat: 'accepted' },
       ],
+      reminders: [],
     });
   });
 

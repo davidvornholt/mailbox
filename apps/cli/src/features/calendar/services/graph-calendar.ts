@@ -43,7 +43,7 @@ const calendarFields = 'id,name,hexColor,canEdit,allowedOnlineMeetingProviders';
 const summaryFields =
   'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,bodyPreview';
 const detailFields =
-  'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId,isOrganizer,responseStatus,isOnlineMeeting,onlineMeetingProvider,onlineMeeting';
+  'id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId,isOrganizer,responseStatus,isOnlineMeeting,onlineMeetingProvider,onlineMeeting,isReminderOn,reminderMinutesBeforeStart';
 // Microsoft Graph returns the cancelled and changed occurrences of a series
 // only on a request for its series master, and gives the changed ones only
 // the fields selected for the master.

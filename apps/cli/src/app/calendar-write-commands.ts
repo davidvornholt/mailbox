@@ -10,6 +10,12 @@ import {
   parseEventTime,
   spanBetween,
 } from '../features/calendar/services/event-times';
+import type { EventReminders } from '../features/calendar/services/event-write';
+import {
+  parseReminder,
+  type ReminderTime,
+  reminderFormats,
+} from '../features/calendar/services/reminders';
 import { AccountConfig } from '../shared/accounts/config';
 import { defineCommand, flag, UsageError } from '../shared/command-line';
 import { type CommandEffect, json } from './command-support';
@@ -40,13 +46,13 @@ const zoneOf = (
         onSome: Effect.succeed,
       });
 
-const timeOf = (
+const parsed = <A>(
   command: string,
   name: string,
   value: string,
-  zone: DateTime.TimeZone,
-): Effect.Effect<EventTime, UsageError> =>
-  Result.match(parseEventTime(value, zone), {
+  result: Result.Result<A, string>,
+): Effect.Effect<A, UsageError> =>
+  Result.match(result, {
     onSuccess: Effect.succeed,
     onFailure: (reason) =>
       Effect.fail(
@@ -55,6 +61,23 @@ const timeOf = (
         }),
       ),
   });
+
+const timeOf = (
+  command: string,
+  name: string,
+  value: string,
+  zone: DateTime.TimeZone,
+): Effect.Effect<EventTime, UsageError> =>
+  parsed(command, name, value, parseEventTime(value, zone));
+
+const remindersOf = (
+  command: string,
+  values: ReadonlyArray<string>,
+  zone: DateTime.TimeZone,
+): Effect.Effect<ReadonlyArray<ReminderTime>, UsageError> =>
+  Effect.forEach(values, (value) =>
+    parsed(command, 'reminder', value, parseReminder(value, zone)),
+  );
 
 const spanOf = (
   command: string,
@@ -109,7 +132,7 @@ const create = defineCommand(
   {
     name: 'calendar create',
     summary: 'Create an event',
-    description: `Create an event in one calendar. Without --attendee, the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself, as Microsoft does for Outlook calendars. A Teams meeting is an Outlook event with a join link; --teams adds one and emails no one by itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. A CalDAV server gets timed events in UTC; Outlook keeps an event's times in --time-zone. Prints the event with its href, when the server returns one its etag, its Teams join link, and, when the server reports it, how it delivered each invitation.`,
+    description: `Create an event in one calendar. Without --attendee, the event invites and emails no one. With --attendee, the user organizes the event and the server emails each attendee an invitation, so pim requires --notify-attendees and a server that sends invitations itself, as Microsoft does for Outlook calendars. A Teams meeting is an Outlook event with a join link; --teams adds one and emails no one by itself. --start and --end take ${timeFormats}; a date-time with a UTC offset, as other commands print, works too. A timed event needs --end; an all-day event's --end is its last day and defaults to --start. A CalDAV server gets timed events in UTC; Outlook keeps an event's times in --time-zone. --reminder takes ${reminderFormats}. Without --reminder, pim adds no reminder to a CalDAV event, and Outlook gives the event its default reminder. Outlook keeps one reminder, a whole number of minutes before the start, without repeats. Prints the event with its href, when the server returns one its etag, its Teams join link, and, when the server reports it, how it delivered each invitation.`,
     flags: {
       account: accountFlag,
       calendar: flag.text('name|href', 'Calendar from "pim calendar list"'),
@@ -122,6 +145,7 @@ const create = defineCommand(
       location: flag.optionalText('text', 'Location'),
       description: flag.optionalText('text', 'Description'),
       attendee: flag.texts('email', 'Address to invite; repeat for more'),
+      reminder: flag.texts('when', 'Reminder; repeat for more'),
       notifyAttendees: notifyAttendeesFlag,
       teams: teamsFlag,
       timeZone: timeZoneFlag,
@@ -139,6 +163,7 @@ const create = defineCommand(
       const start = yield* timeOf(command, 'start', values.start, zone);
       const end = yield* optionalTimeOf(command, 'end', values.end, zone);
       const span = yield* spanOf(command, start, end);
+      const reminders = yield* remindersOf(command, values.reminder, zone);
       const config = yield* AccountConfig;
       const account = yield* config.getAccount(values.account);
       const event = yield* createEvent(
@@ -153,6 +178,7 @@ const create = defineCommand(
           ...(values.description === undefined
             ? {}
             : { description: values.description }),
+          ...(reminders.length === 0 ? {} : { reminders }),
           attendees: values.attendee,
           notifyAttendees: values.notifyAttendees,
           zone,
@@ -186,11 +212,33 @@ const targetOf = (values: {
   notifyAttendees: values.notifyAttendees,
 });
 
+// The reminders that replace the event's, or none to keep them.
+const newReminders = (
+  command: string,
+  values: {
+    readonly reminder: ReadonlyArray<string>;
+    readonly noReminders: boolean;
+  },
+  zone: DateTime.TimeZone,
+): Effect.Effect<EventReminders, UsageError> =>
+  Effect.gen(function* () {
+    if (values.noReminders && values.reminder.length > 0) {
+      return yield* new UsageError({
+        message: `pim ${command}: pass --reminder or --no-reminders, not both`,
+      });
+    }
+    if (values.noReminders) {
+      return { reminders: [] };
+    }
+    const reminders = yield* remindersOf(command, values.reminder, zone);
+    return reminders.length === 0 ? {} : { reminders };
+  });
+
 const update = defineCommand(
   {
     name: 'calendar update',
     summary: 'Change an event',
-    description: `Change the title, times, location, description, or attendees of an event, or add a Teams meeting. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. pim does not move recurring events; in an Outlook calendar, an href from "pim calendar events" names one occurrence, which pim changes alone. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one.`,
+    description: `Change the title, times, location, description, reminders, or attendees of an event, or add a Teams meeting. Pass the etag from "pim calendar get"; if the event changed since, nothing is written. --start and --end take ${timeFormats}. --start alone moves the event and keeps its length. An empty --location or --description removes it. --no-reminders removes every reminder of the event. --reminder replaces them all and takes ${reminderFormats}. Outlook keeps one reminder, a whole number of minutes before the start, without repeats. pim does not move recurring events; in an Outlook calendar, an href from "pim calendar events" names one occurrence, which pim changes alone. A change to a meeting, or to who attends, makes the server email the attendees, so pim makes it only with --notify-attendees, only for meetings the user organizes, and only on a server that sends invitations itself. That includes a change to a meeting's reminders alone. Moving a meeting asks the attendees to reply again. Prints the changed event with its new etag, when the server returns one.`,
     flags: {
       ...targetFlags,
       title: flag.optionalText('text', 'New title'),
@@ -206,6 +254,11 @@ const update = defineCommand(
         'email',
         'Attendee to take off the event; repeat for more',
       ),
+      reminder: flag.texts(
+        'when',
+        'Reminder to replace all others with; repeat for more',
+      ),
+      noReminders: flag.switch('Remove every reminder'),
       teams: teamsFlag,
       timeZone: timeZoneFlag,
     },
@@ -219,11 +272,13 @@ const update = defineCommand(
         [title, values.start, values.end, location, description].every(
           (value) => value === undefined,
         ) &&
-        addAttendee.length + removeAttendee.length === 0 &&
+        addAttendee.length + removeAttendee.length + values.reminder.length ===
+          0 &&
+        !values.noReminders &&
         !values.teams
       ) {
         return yield* new UsageError({
-          message: `pim ${command}: pass at least one of --title, --start, --end, --location, --description, --add-attendee, --remove-attendee, or --teams`,
+          message: `pim ${command}: pass at least one of --title, --start, --end, --location, --description, --add-attendee, --remove-attendee, --reminder, --no-reminders, or --teams`,
         });
       }
       yield* nonEmpty(command, 'title', title);
@@ -231,6 +286,7 @@ const update = defineCommand(
       const start = yield* optionalTimeOf(command, 'start', values.start, zone);
       const end = yield* optionalTimeOf(command, 'end', values.end, zone);
       yield* checkedPair(command, start, end);
+      const reminders = yield* newReminders(command, values, zone);
       const config = yield* AccountConfig;
       const account = yield* config.getAccount(values.account);
       const event = yield* updateEvent(
@@ -242,6 +298,7 @@ const update = defineCommand(
           ...(description === undefined ? {} : { description }),
           ...(start === undefined ? {} : { start }),
           ...(end === undefined ? {} : { end }),
+          ...reminders,
           addAttendees: addAttendee,
           removeAttendees: removeAttendee,
           zone,

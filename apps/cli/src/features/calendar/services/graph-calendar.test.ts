@@ -272,7 +272,7 @@ describe('graphEvent', () => {
     });
     expect(requests).toEqual([
       {
-        url: `${root}/me/events/occ-1?$select=id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId,isOrganizer,responseStatus,isOnlineMeeting,onlineMeetingProvider,onlineMeeting`,
+        url: `${root}/me/events/occ-1?$select=id,iCalUId,subject,start,end,isAllDay,isCancelled,location,organizer,attendees,type,originalStart,body,webLink,seriesMasterId,isOrganizer,responseStatus,isOnlineMeeting,onlineMeetingProvider,onlineMeeting,isReminderOn,reminderMinutesBeforeStart`,
         prefer: 'outlook.timezone="UTC", outlook.body-content-type="text"',
       },
       {
