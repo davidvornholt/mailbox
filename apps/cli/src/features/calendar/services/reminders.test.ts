@@ -11,7 +11,8 @@ import {
 const relative = (
   minutes: number,
   related: 'start' | 'end' = 'start',
-): ReminderTime => ({ _tag: 'Relative', minutes, related });
+  days = 0,
+): ReminderTime => ({ _tag: 'Relative', days, seconds: minutes * 60, related });
 
 const absolute = (iso: string): ReminderTime => ({
   _tag: 'Absolute',
@@ -22,9 +23,9 @@ describe('parseReminder', () => {
   it.each([
     ['15m', relative(-15)],
     ['1h30m', relative(-90)],
-    ['1d', relative(-1440)],
-    ['2w', relative(-20_160)],
-    ['1w2d3h4m', relative(-13_144)],
+    ['1d', relative(0, 'start', -1)],
+    ['2w', relative(0, 'start', -14)],
+    ['1w2d3h4m', relative(-184, 'start', -9)],
     ['0m', relative(0)],
     ['10m after start', relative(10)],
     ['1h before end', relative(-60, 'end')],
@@ -57,14 +58,14 @@ describe('parseReminder', () => {
 
 describe('reminderWhen', () => {
   it.each([
-    ['1440m', '1d before start'],
+    ['1440m', '24h before start'],
     ['90m', '1h30m before start'],
     ['7d', '1w before start'],
     ['8d', '1w1d before start'],
     ['0m', '0m before start'],
     ['0m after end', '0m before end'],
     ['120m after start', '2h after start'],
-    ['25h before end', '1d1h before end'],
+    ['25h before end', '25h before end'],
     ['2026-11-10T18:00', '2026-11-10T18:00:00+01:00'],
     ['2026-07-01T09:30Z', '2026-07-01T11:30:00+02:00'],
   ])('prints %p as %p, which reads back the same', (value, printed) => {

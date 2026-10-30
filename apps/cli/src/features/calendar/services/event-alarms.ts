@@ -3,10 +3,11 @@ import ICAL from 'ical.js';
 import type { Reminder } from '../schemas/calendar';
 import type { CalendarObject } from './event-fields';
 import { instantOf } from './ical-time';
-import { type ReminderTime, reminderWhen } from './reminders';
+import { type ReminderTime, reminderWhen, secondsPerMinute } from './reminders';
 
-const secondsPerMinute = 60;
-const minutesPerDay = 1440;
+const secondsPerHour = 3600;
+const secondsPerDay = 86_400;
+const daysPerWeek = 7;
 
 // The time a VALARM's TRIGGER stands for, or none when it has no trigger.
 const triggerOf = (
@@ -29,11 +30,19 @@ const triggerOf = (
     return;
   }
   const related = property.getParameter('related');
+  const sign = value.isNegative ? -1 : 1;
+  const seconds =
+    value.hours * secondsPerHour +
+    value.minutes * secondsPerMinute +
+    value.seconds;
   return {
     _tag: 'Relative',
+    // Adding 0 turns -0 into 0.
+    days: sign * (value.weeks * daysPerWeek + value.days) + 0,
     // Seconds round down to the minute, so the reminder printed, written
-    // back with --reminder, never goes off later. Adding 0 turns -0 into 0.
-    minutes: Math.floor(value.toSeconds() / secondsPerMinute) + 0,
+    // back with --reminder, never goes off later.
+    seconds:
+      Math.floor((sign * seconds) / secondsPerMinute) * secondsPerMinute + 0,
     related:
       typeof related === 'string' && related.toUpperCase() === 'END'
         ? 'end'
@@ -79,10 +88,24 @@ const isAllDay = (component: ICAL.Component): boolean => {
   return start instanceof ICAL.Time && start.isDate;
 };
 
+// A duration with the days and the hours, minutes, and seconds apart, as
+// ICAL.Duration.fromSeconds would turn 24 hours into a day.
+const durationOf = (days: number, seconds: number): ICAL.Duration => {
+  const exact = Math.abs(seconds);
+  return ICAL.Duration.fromData({
+    isNegative: days < 0 || seconds < 0,
+    days: Math.abs(days),
+    hours: Math.floor(exact / secondsPerHour),
+    minutes: Math.floor((exact % secondsPerHour) / secondsPerMinute),
+    seconds: exact % secondsPerMinute,
+  });
+};
+
 // A display alarm that shows the event's title. RELATED=END needs DTEND or
 // DURATION (RFC 5545, section 3.8.6.3); without them, a timed event ends at
 // its start and an all-day event a day after it, so the trigger is moved to
-// the start.
+// the start. A day after the start and some hours before it fit in no one
+// duration, so such a trigger counts the day as 24 hours.
 const alarmOf = (component: ICAL.Component, time: ReminderTime) => {
   const alarm = new ICAL.Component('valarm');
   alarm.addPropertyWithValue('action', 'DISPLAY');
@@ -95,10 +118,13 @@ const alarmOf = (component: ICAL.Component, time: ReminderTime) => {
     const hasEnd =
       component.hasProperty('dtend') || component.hasProperty('duration');
     const fromEnd = time.related === 'end';
-    const shift = fromEnd && !hasEnd && isAllDay(component) ? minutesPerDay : 0;
+    const days =
+      time.days + (fromEnd && !hasEnd && isAllDay(component) ? 1 : 0);
     const trigger = alarm.addPropertyWithValue(
       'trigger',
-      ICAL.Duration.fromSeconds((time.minutes + shift) * secondsPerMinute),
+      days > 0 && time.seconds < 0
+        ? durationOf(0, days * secondsPerDay + time.seconds)
+        : durationOf(days, time.seconds),
     );
     if (fromEnd && hasEnd) {
       trigger.setParameter('related', 'END');

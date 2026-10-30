@@ -10,7 +10,12 @@ import type { ReminderTime } from './reminders';
 const relative = (
   minutes: number,
   related: 'start' | 'end' = 'start',
-): ReminderTime => ({ _tag: 'Relative', minutes, related });
+): ReminderTime => ({
+  _tag: 'Relative',
+  days: 0,
+  seconds: minutes * 60,
+  related,
+});
 
 const reminderOf = (reminders?: ReadonlyArray<ReminderTime>) =>
   Effect.runSync(
@@ -45,6 +50,11 @@ describe('graphReminder', () => {
       [relative(0)],
       { isReminderOn: true, reminderMinutesBeforeStart: 0 },
     ],
+    [
+      '1d',
+      [{ _tag: 'Relative', days: -1, seconds: 0, related: 'start' } as const],
+      { isReminderOn: true, reminderMinutesBeforeStart: 1440 },
+    ],
   ])('maps %s', (_, reminders, expected) => {
     expect(reminderOf(reminders)).toMatchObject({
       _tag: 'Success',
@@ -78,6 +88,11 @@ describe('graphReminders', () => {
       'a reminder in the form --reminder takes',
       { isReminderOn: true, reminderMinutesBeforeStart: 90 },
       [{ when: '1h30m before start' }],
+    ],
+    [
+      'a reminder a day before in hours, as Outlook counts exact minutes',
+      { isReminderOn: true, reminderMinutesBeforeStart: 1440 },
+      [{ when: '24h before start' }],
     ],
     [
       'a reminder at the start',

@@ -3,7 +3,14 @@ import { EventChangeError } from '../errors/errors';
 import type { Reminder } from '../schemas/calendar';
 import type { EventReminders } from './event-write';
 import type { GraphEvent } from './graph-events';
-import { type ReminderTime, relativeWhen, reminderWhen } from './reminders';
+import {
+  type ReminderTime,
+  relativeWhen,
+  reminderWhen,
+  secondsPerMinute,
+} from './reminders';
+
+const minutesPerDay = 1440;
 
 // Outlook keeps one reminder per event, a whole number of minutes before its
 // start, in these two properties.
@@ -44,11 +51,15 @@ export const graphReminder = (
     rest.length === 0 &&
     first._tag === 'Relative' &&
     first.related === 'start' &&
-    first.minutes <= 0
+    first.days <= 0 &&
+    first.seconds <= 0
   ) {
     return Effect.succeed({
       isReminderOn: true,
-      reminderMinutesBeforeStart: Math.abs(first.minutes),
+      // Outlook counts minutes, so a day before is 1440 of them.
+      reminderMinutesBeforeStart: Math.abs(
+        first.days * minutesPerDay + first.seconds / secondsPerMinute,
+      ),
     });
   }
   return Effect.fail(
@@ -59,9 +70,18 @@ export const graphReminder = (
   );
 };
 
-// The reminder of an Outlook event, if it has one.
+// The reminder of an Outlook event, if it has one, in exact hours and
+// minutes.
 export const graphReminders = (event: GraphEvent): ReadonlyArray<Reminder> =>
   event.isReminderOn === true &&
   typeof event.reminderMinutesBeforeStart === 'number'
-    ? [{ when: relativeWhen(-event.reminderMinutesBeforeStart, 'start') }]
+    ? [
+        {
+          when: relativeWhen(
+            0,
+            -event.reminderMinutesBeforeStart * secondsPerMinute,
+            'start',
+          ),
+        },
+      ]
     : [];

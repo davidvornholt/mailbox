@@ -74,7 +74,9 @@ describe('createEvent', () => {
         {
           calendar: 'Work',
           ...trip,
-          reminders: [{ _tag: 'Relative', minutes: -1080, related: 'start' }],
+          reminders: [
+            { _tag: 'Relative', days: 0, seconds: -64_800, related: 'start' },
+          ],
           attendees: [],
           notifyAttendees: false,
         },
@@ -216,7 +218,11 @@ describe('updateEvent with reminders', () => {
       updateCalDavEvent(
         davAccount,
         target(),
-        { reminders: [{ _tag: 'Relative', minutes: -15, related: 'start' }] },
+        {
+          reminders: [
+            { _tag: 'Relative', days: 0, seconds: -900, related: 'start' },
+          ],
+        },
         berlin,
       ),
     );
