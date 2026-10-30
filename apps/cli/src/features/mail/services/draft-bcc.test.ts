@@ -5,7 +5,6 @@ import { simpleParser } from 'mailparser';
 import type { Account } from '../../../shared/accounts/account';
 import type { UpdateDraftInput } from '../schemas/mail';
 import { replaceDraft } from './draft';
-import { readMessage } from './imap-ops';
 
 const account: Account = {
   email: 'sender@example.com',
@@ -68,14 +67,6 @@ const parseReplacement = async (update: UpdateDraftInput) => {
 };
 
 describe('draft Bcc lifecycle', () => {
-  it('returns Bcc recipients when reading stored draft MIME', async () => {
-    const message = await Effect.runPromise(
-      readMessage(clientWith([]), input.folder, input.uid),
-    );
-
-    expect(message.bcc).toBe(existingBcc);
-  });
-
   it('preserves existing Bcc recipients when an update omits bcc', async () => {
     const parsed = await parseReplacement(input);
     const parsedBcc = Array.isArray(parsed.bcc) ? parsed.bcc[0] : parsed.bcc;

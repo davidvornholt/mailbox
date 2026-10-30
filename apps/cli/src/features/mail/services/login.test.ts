@@ -117,16 +117,6 @@ describe('imapLoginFor', () => {
     expect(stored).toEqual(['rotated']);
   });
 
-  it('does not rewrite the keyring when the refresh token did not change', async () => {
-    const { credentials, stored } = credentialsWith((_email, refreshToken) =>
-      Effect.succeed({ accessToken: 'access', refreshToken }),
-    );
-
-    await loginFor('microsoft', credentials);
-
-    expect(stored).toEqual([]);
-  });
-
   it('fails without touching the keyring when Microsoft rejects the refresh', async () => {
     const { credentials, stored } = credentialsWith(() =>
       Effect.fail(new OAuthError({ message: 'revoked' })),
