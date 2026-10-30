@@ -16,38 +16,33 @@ let
   # the flake's lastModifiedDate (YYYYMMDDHHMMSS).
   datePart = start: length: builtins.substring start length lastModifiedDate;
   version = "0-unstable-${datePart 0 4}-${datePart 4 2}-${datePart 6 2}";
-  # Leave out what local installs and builds create, for when the flake is
-  # read from a plain path; a git checkout already leaves out ignored files.
-  src = lib.fileset.toSource {
-    root = ../.;
-    fileset = lib.fileset.difference ../. (
-      lib.fileset.unions (
-        map lib.fileset.maybeMissing [
-          ../.direnv
-          ../.git
-          ../.turbo
-          ../node_modules
-          ../result
-          ../apps/cli/.turbo
-          ../apps/cli/dist
-          ../apps/cli/node_modules
-          ../packages/a11y-testing/.turbo
-          ../packages/a11y-testing/node_modules
-          ../packages/typescript-config/.turbo
-          ../packages/typescript-config/node_modules
-        ]
-      )
-    );
+  # The repository without dependencies, build output, and local state, which a
+  # dirty checkout or a path: flake would otherwise copy into the store.
+  # lib.fileset can't exclude a directory by name at any depth, so this filters
+  # the source by name instead.
+  src = lib.cleanSourceWith {
+    src = lib.cleanSource ../.;
+    filter =
+      path: _type:
+      !builtins.elem (baseNameOf path) [
+        ".direnv"
+        ".turbo"
+        "dist"
+        "node_modules"
+        "result"
+      ];
   };
   skills = builtins.attrNames (
     lib.filterAttrs (_name: type: type == "directory") (builtins.readDir ../apps/cli/skills)
   );
   # The CLI's runtime dependencies only; the compiled binary bundles them.
-  # Bun's version is part of the name, so a Bun update checks the hash against
-  # the layout that Bun installs instead of reusing the old output.
+  # The name holds Bun's version and a digest of bun.lock, so a change to either
+  # installs them again and fails on a stale hash instead of silently reusing
+  # the old dependencies.
+  lockDigest = builtins.substring 0 12 (builtins.hashFile "sha256" ../bun.lock);
   nodeModules = stdenvNoCC.mkDerivation {
-    pname = "${pname}-node-modules-bun-${bun.version}";
-    inherit version src;
+    name = "${pname}-node-modules-bun-${bun.version}-${lockDigest}";
+    inherit src;
     nativeBuildInputs = [ bun ];
     dontConfigure = true;
     buildPhase = ''
