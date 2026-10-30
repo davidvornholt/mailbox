@@ -12,4 +12,5 @@ Run `pim mail --help` for the mail commands and `pim <command> --help` for their
 - Pipe the body on stdin with a quoted heredoc (`<<'EOF'`).
 - A message with a `text/calendar` attachment carries calendar data, such as an invitation. Read and answer it with `pim calendar invitation` and `pim calendar respond` from the pim-calendar skill, not with a plain reply. `pim mail draft update` drops the calendar data from an answer draft; run `pim calendar respond` again instead.
 - Delete a draft only when the user asked for it.
+- Read `failures` before saying nothing was found: an account that failed wasn't searched.
 - If an account has no working login, ask the user to run `pim login`.
