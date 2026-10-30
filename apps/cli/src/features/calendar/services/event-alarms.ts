@@ -5,9 +5,27 @@ import type { CalendarObject } from './event-fields';
 import { instantOf } from './ical-time';
 import { type ReminderTime, reminderWhen, secondsPerMinute } from './reminders';
 
+const msPerSecond = 1000;
 const secondsPerHour = 3600;
 const secondsPerDay = 86_400;
 const daysPerWeek = 7;
+
+// The days and seconds of a duration, apart: days are nominal and seconds
+// exact (RFC 5545, section 3.3.6).
+const partsOf = (
+  duration: ICAL.Duration,
+): { readonly days: number; readonly seconds: number } => {
+  const sign = duration.isNegative ? -1 : 1;
+  const seconds =
+    duration.hours * secondsPerHour +
+    duration.minutes * secondsPerMinute +
+    duration.seconds;
+  return {
+    // Adding 0 turns -0 into 0.
+    days: sign * (duration.weeks * daysPerWeek + duration.days) + 0,
+    seconds: sign * seconds + 0,
+  };
+};
 
 // The time a VALARM's TRIGGER stands for, or none when it has no trigger.
 const triggerOf = (
@@ -30,16 +48,9 @@ const triggerOf = (
     return;
   }
   const related = property.getParameter('related');
-  const sign = value.isNegative ? -1 : 1;
-  const seconds =
-    value.hours * secondsPerHour +
-    value.minutes * secondsPerMinute +
-    value.seconds;
   return {
     _tag: 'Relative',
-    // Adding 0 turns -0 into 0.
-    days: sign * (value.weeks * daysPerWeek + value.days) + 0,
-    seconds: sign * seconds + 0,
+    ...partsOf(value),
     related:
       typeof related === 'string' && related.toUpperCase() === 'END'
         ? 'end'
@@ -61,23 +72,54 @@ const textOf = (
 const actionOf = (alarm: ICAL.Component): string | undefined =>
   textOf(alarm, 'action')?.toLowerCase();
 
-// The reminders of an event, from its VALARMs. Display alarms, which show a
-// message, leave out the action.
+// The times an alarm goes off: its trigger, then REPEAT more times, each
+// DURATION after the one before (RFC 5545, section 3.8.6.2). No one
+// duration holds days one way and seconds the other, like 5 minutes after a
+// day before the start, so such a time keeps only the part that points
+// earlier and goes off no later.
+const firingsOf = (
+  alarm: ICAL.Component,
+  local: DateTime.TimeZone,
+): ReadonlyArray<ReminderTime> => {
+  const first = triggerOf(alarm, local);
+  const repeat = Number(alarm.getFirstPropertyValue('repeat'));
+  const delay = alarm.getFirstPropertyValue('duration');
+  if (first === undefined) {
+    return [];
+  }
+  if (!(delay instanceof ICAL.Duration && repeat > 0)) {
+    return [first];
+  }
+  const step = partsOf(delay);
+  return Array.from({ length: repeat + 1 }, (_, count): ReminderTime => {
+    if (first._tag === 'Absolute') {
+      // An absolute trigger is in UTC, where a day lasts 24 hours.
+      const seconds = step.days * secondsPerDay + step.seconds;
+      return { _tag: 'Absolute', ms: first.ms + count * seconds * msPerSecond };
+    }
+    const days = first.days + count * step.days;
+    const seconds = first.seconds + count * step.seconds;
+    const mixed = days * seconds < 0;
+    return {
+      ...first,
+      days: mixed ? Math.min(days, 0) : days,
+      seconds: mixed ? Math.min(seconds, 0) : seconds,
+    };
+  });
+};
+
+// The reminders of an event, one for each time its VALARMs go off. Display
+// alarms, which show a message, leave out the action.
 export const remindersOf = (
   component: ICAL.Component,
   local: DateTime.TimeZone,
 ): ReadonlyArray<Reminder> =>
   component.getAllSubcomponents('valarm').flatMap((alarm) => {
-    const time = triggerOf(alarm, local);
     const action = actionOf(alarm);
-    return time === undefined
-      ? []
-      : [
-          {
-            when: reminderWhen(time, local),
-            ...(action === undefined || action === 'display' ? {} : { action }),
-          },
-        ];
+    return firingsOf(alarm, local).map((time) => ({
+      when: reminderWhen(time, local),
+      ...(action === undefined || action === 'display' ? {} : { action }),
+    }));
   });
 
 const isAllDay = (component: ICAL.Component): boolean => {

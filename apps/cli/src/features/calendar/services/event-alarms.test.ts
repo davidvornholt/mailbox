@@ -184,7 +184,26 @@ describe('eventDetail', () => {
         ...planning(
           ...alarm('ACTION:DISPLAY', 'TRIGGER:-PT15M'),
           ...alarm('ACTION:AUDIO', 'TRIGGER;RELATED=END:PT10M'),
-          ...alarm('ACTION:EMAIL', 'TRIGGER;VALUE=DATE-TIME:20261110T170000Z'),
+          ...alarm(
+            'ACTION:EMAIL',
+            'TRIGGER;VALUE=DATE-TIME:20261110T170000Z',
+            'REPEAT:1',
+            'DURATION:PT10M',
+          ),
+          ...alarm(
+            'ACTION:DISPLAY',
+            'TRIGGER:-PT15M',
+            'REPEAT:2',
+            'DURATION:PT5M',
+          ),
+          // 5 minutes after a day before fits in no one duration, so it
+          // goes off a day before.
+          ...alarm(
+            'ACTION:DISPLAY',
+            'TRIGGER:-P1D',
+            'REPEAT:1',
+            'DURATION:PT5M',
+          ),
           ...alarm('ACTION:DISPLAY', 'TRIGGER:-P1DT2H'),
           // Days are nominal and hours exact (RFC 5545, section 3.3.6): for
           // a start at 10:00 on 2026-03-29, when daylight saving time starts
@@ -203,6 +222,12 @@ describe('eventDetail', () => {
       { when: '15m before start' },
       { when: '10m after end', action: 'audio' },
       { when: '2026-11-10T18:00:00+01:00', action: 'email' },
+      { when: '2026-11-10T18:10:00+01:00', action: 'email' },
+      { when: '15m before start' },
+      { when: '10m before start' },
+      { when: '5m before start' },
+      { when: '1d before start' },
+      { when: '1d before start' },
       { when: '1d2h before start' },
       { when: '1d before start' },
       { when: '24h before start' },
@@ -218,6 +243,12 @@ describe('eventDetail', () => {
       'TRIGGER:-PT15M',
       'TRIGGER;RELATED=END:PT10M',
       'TRIGGER;VALUE=DATE-TIME:20261110T170000Z',
+      'TRIGGER;VALUE=DATE-TIME:20261110T171000Z',
+      'TRIGGER:-PT15M',
+      'TRIGGER:-PT10M',
+      'TRIGGER:-PT5M',
+      'TRIGGER:-P1D',
+      'TRIGGER:-P1D',
       'TRIGGER:-P1DT2H',
       'TRIGGER:-P1D',
       'TRIGGER:-PT24H',
